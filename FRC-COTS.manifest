@@ -1,13 +1,13 @@
 {
-	"autodeskProduct":	"Fusion",
-	"type":	"addin",
-	"author":	"Logan deLaar - Team 5000",
-	"description":	{
-		"":	""
+	"autodeskProduct": "Fusion360",
+	"type": "addin",
+	"author": "Logan deLaar - Team 5000",
+	"description": {
+	"": "FRC COTS library browser"
 	},
-	"version":	"",
-	"runOnStartup":	false,
-	"supportedOS":	"mac",
-	"editEnabled":	true,
-	"iconFilename":	"Screenshot 2025-12-09 at 8.25.19 AM.png"
+	"version": "1.0.0",
+	"runOnStartup": false,
+	"supportedOS": "windows|mac",
+	"editEnabled": true,
+	"iconFilename": "Screenshot 2025-12-09 at 8.25.19 AM.png"
 }
