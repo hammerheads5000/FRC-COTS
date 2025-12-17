@@ -236,6 +236,7 @@ def _palette_html_path():
 
 def load_palette(ui):
     """Load the HTML palette used to browse COTS parts."""
+    global g_cots_files
 
     futil.log(f'load_palette()....')
 
@@ -319,7 +320,7 @@ class ThumbnailThread(threading.Thread):
             doneLoading = True
             idx = 0
             while idx < len(g_thumbnails):
-                futil.log(f'Processing thumbnail {idx}...')
+                # futil.log(f'Processing thumbnail {idx}...')
                 (index, future) = g_thumbnails[idx]
                 future : adsk.core.DataObjectFuture = future
                 if future.state == adsk.core.FutureStates.ProcessingFutureState:
@@ -327,8 +328,11 @@ class ThumbnailThread(threading.Thread):
                 try:
                     if future.dataObject != None:
                         filename = get_icon_filename(index)
-                        futil.log(f'Creating thumbnail for {filename}')
-                        os.remove( filename )
+                        # futil.log(f'Creating thumbnail for {filename}')
+                        try:
+                            os.remove( filename )
+                        except:
+                            pass
                         future.dataObject.saveToFile( filename )
                 except:
                     futil.handle_error(f'   Error processing thumbnail {index}...')
@@ -424,18 +428,6 @@ class FRCHTMLHandler(adsk.core.HTMLEventHandler):
 def run(context):
     app, ui = get_app_ui()
     try:
-        # Load favorites and COTS list once when the add-in starts
-        load_favorites()
-        load_cots_files(app)
-
-        stopFlag = threading.Event()
-        thumbThread = ThumbnailThread(stopFlag)
-        thumbThread.start()
-
-        # Pre-create the HTML palette so it is ready when the button is pressed
-        palette = get_or_create_palette(ui)
-        load_palette(ui)
-        palette.isVisible = False
 
         cmd_id = 'FRC_InsertCOTS'
         cmd_def = ui.commandDefinitions.itemById(cmd_id)
@@ -468,6 +460,18 @@ def run(context):
             control = insert_panel.controls.itemById(cmd_id)
             if not control:
                 insert_panel.controls.addCommand(cmd_def, '')
+
+        # Load favorites and COTS list once when the add-in starts
+        load_favorites()
+        load_cots_files(app)
+
+        stopFlag = threading.Event()
+        thumbThread = ThumbnailThread(stopFlag)
+        thumbThread.start()
+
+        # Pre-create the HTML palette so it is ready when the button is pressed
+        load_palette(ui)
+        # palette.isVisible = False
 
     except:
         ui.messageBox('Add-in run failed:\n{}'.format(traceback.format_exc()))
