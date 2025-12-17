@@ -14,7 +14,7 @@
 			"windows":	{
 				"filePath":	"${file}"
 			},
-			"port":	0,
+			"port":	9000,
 			"host":	"localhost"
 		}]
 }

@@ -62,3 +62,7 @@ def handle_error(name: str, show_message_box: bool = False):
     # If desired you could show an error as a message box.
     if show_message_box:
         ui.messageBox(f'{name}\n{traceback.format_exc()}')
+
+def popup_error( message: str ):
+    log(message)
+    ui.messageBox( message )

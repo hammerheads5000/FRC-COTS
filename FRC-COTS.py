@@ -3,14 +3,21 @@ import adsk.fusion
 import traceback
 import json
 import os
+import threading
+
+from .lib import fusionAddInUtils as futil
+
 
 # Keep a global reference to event handlers so they are not garbage collected.
 handlers = []
 
 # Global state
-g_cots_files = []      # list of (label, DataFile)
+g_cots_files = []      # list of (label, DataFile, thumbidx)
 g_favorites = {}       # dataFile.id -> bool
 g_palette = None       # HTML palette reference
+g_thumbnails = []
+app = adsk.core.Application.get()
+ui = app.userInterface
 
 
 def get_app_ui():
@@ -24,10 +31,17 @@ def _favorites_path():
     folder = os.path.dirname(__file__)
     return os.path.join(folder, 'FRC_COTS_favorites.json')
 
+def get_icon_filename( thumbidx: int ):
+    """Path to the favorites JSON file next to this add-in."""
+    folder = os.path.dirname(__file__)
+    return os.path.join(folder, 'icons', f'icon_{thumbidx}.png')
 
 def load_favorites():
     """Load favorites mapping from disk."""
     global g_favorites
+
+    futil.log( f'Loading favorites...')
+
     try:
         path = _favorites_path()
         if os.path.exists(path):
@@ -48,29 +62,45 @@ def save_favorites():
     except Exception:
         pass
 
-
-def _walk_folder(folder, prefix, out_list):
+def _walk_folder(progress: adsk.core.ProgressDialog, folder, prefix, out_list):
     """Recursively walk a DataFolder and append (label, DataFile) for .f3d files."""
     # Files
+    progress.message = f'Loading folder {prefix}, file %v ...'
+    idx = 0
     for df in folder.dataFiles:
+        if progress.wasCancelled:
+            return
+        
         try:
+            adsk.doEvents()
             if df.fileExtension and df.fileExtension.lower() == 'f3d':
                 label = prefix + df.name
-                out_list.append((label, df))
+                out_list.append((label, df, len(out_list)+1))
+                futil.log(f'Loading file {label} at idx {len(out_list)}...')
+                idx = idx + 1
+                progress.progressValue = idx
         except:
+            futil.log(f'Failed to load file {df.name}.')
             continue
+    
+    futil.log( f'Folder {folder.name}, loaded {idx} files...')
 
     # Subfolders
     for sub in folder.dataFolders:
         new_prefix = prefix + sub.name + '/'
-        _walk_folder(sub, new_prefix, out_list)
+        _walk_folder(progress, sub, new_prefix, out_list)
 
 
 def load_cots_files(app):
     """Populate g_cots_files with all .f3d files under the FRC_COTS project."""
     global g_cots_files
+    global g_thumbnails
+
     g_cots_files = []
 
+    futil.log(f'Loading COTS files....')
+
+    progress = ui.createProgressDialog()
     try:
         data = app.data
         projects = data.dataProjects
@@ -82,15 +112,25 @@ def load_cots_files(app):
                 break
 
         if not frc_project:
+            futil.popup_error( "Could not find project FRC_COTS.")
             return
 
         root = frc_project.rootFolder
-        _walk_folder(root, '', g_cots_files)
+
+        progress.show( "Loading COTS files from FRC_COTS Project...", "", 0, 20 )
+        _walk_folder(progress, root, '', g_cots_files)
+        futil.log( f'Loaded {len(g_cots_files)} COTS files...')
 
         # Sort nicely by label
         g_cots_files.sort(key=lambda t: t[0].lower())
     except:
+        futil.handle_error( "Load COTS files" )
         g_cots_files = []
+    progress.hide()
+
+    futil.log( "   Requesting thumbnails...")
+    for (label, df, idx) in g_cots_files:
+        g_thumbnails.append( (idx, df.thumbnail) )
 
 
 def insert_part_at_targets(design, label, data_file, targets, ui):
@@ -194,17 +234,47 @@ def _palette_html_path():
     """Path to the HTML palette file."""
     return os.path.join(os.path.dirname(__file__), 'frc_cots_palette.html')
 
+def load_palette(ui):
+    """Load the HTML palette used to browse COTS parts."""
+
+    futil.log(f'load_palette()....')
+
+    try:
+        # Refresh COTS list in case the project changed
+        # load_cots_files(app)
+        palette = get_or_create_palette(ui)
+        if palette:
+            try:
+                palette.isVisible = True
+            except:
+                # If Fusion is unhappy about toggling visibility, just ignore it.
+                pass
+
+            parts = []
+            for idx, (label, df, thumbidx) in enumerate(g_cots_files):
+                parts.append({
+                    'index': idx,
+                    'label': label,
+                    'favorite': g_favorites.get(df.id, False),
+                    'thumb': get_icon_filename(thumbidx)
+                })
+            palette.sendInfoToHTML('partsList', json.dumps(parts))
+    except:
+        futil.handle_error('load_palette failed:')
+
 
 def get_or_create_palette(ui):
     """Create or return the HTML palette used to browse COTS parts."""
     global g_palette
+
+    futil.log(f'get_or_create_palette()....')
 
     pal_id = 'FRC_COTS_Palette'
     # If we already have a valid reference, reuse it
     if g_palette and g_palette.isValid:
         return g_palette
 
-    pal = ui.palettes.itemById(pal_id)
+    pal: adsk.core.Palette = ui.palettes.itemById(pal_id)
     if pal and not pal.isValid:
         # Stale palette, remove so we can recreate
         pal.deleteMe()
@@ -231,11 +301,51 @@ def get_or_create_palette(ui):
     g_palette = pal
     return pal
 
+class ThumbnailThread(threading.Thread):
+    def __init__(self, event):
+        threading.Thread.__init__(self)
+        self.stopped = event
+
+    def run(self):
+        global g_thumbnails
+
+        futil.log(f'ThumbnailThread::run()...')
+
+        # Process all the thumbnail images....
+        doneLoading = False
+
+        while not doneLoading:
+            doneLoading = True
+            idx = 0
+            while idx < len(g_thumbnails):
+                futil.log(f'Processing thumbnail {idx}...')
+                (index, future) = g_thumbnails[idx]
+                future : adsk.core.DataObjectFuture = future
+                if future.state == adsk.core.FutureStates.ProcessingFutureState:
+                    doneLoading = False
+                try:
+                    if future.dataObject != None:
+                        filename = get_icon_filename(index)
+                        futil.log(f'Creating thumbnail for {filename}')
+                        os.remove( filename )
+                        future.dataObject.saveToFile( filename )
+                except:
+                    futil.handle_error(f'   Error processing thumbnail {index}...')
+
+                idx = idx + 1
+
+        futil.log(f'ThumbnailThread finished...')
+
+
 
 class FRCHTMLHandler(adsk.core.HTMLEventHandler):
     """Handles messages coming from the HTML palette."""
 
     def notify(self, args):
+        global g_cots_files
+
+        futil.log(f'FRCHTMLHandler::notify()...')
+
         app, ui = get_app_ui()
         try:
             action = args.action
@@ -243,14 +353,16 @@ class FRCHTMLHandler(adsk.core.HTMLEventHandler):
 
             # HTML asks for the list of parts
             if action == 'requestParts':
-                parts = []
-                for idx, (label, df) in enumerate(g_cots_files):
-                    parts.append({
-                        'index': idx,
-                        'label': label,
-                        'favorite': g_favorites.get(df.id, False)
-                    })
-                args.palette.sendInfoToHTML('partsList', json.dumps(parts))
+                # parts = []
+                # for idx, (label, df, thumbidx) in enumerate(g_cots_files):
+                #     parts.append({
+                #         'index': idx,
+                #         'label': label,
+                #         'favorite': g_favorites.get(df.id, False),
+                #         'thumb': get_icon_filename(thumbidx)
+                #     })
+                # args.palette.sendInfoToHTML('partsList', json.dumps(parts))
+                load_palette(ui)
                 return
 
             # HTML tells us to insert the selected part at current canvas selection
@@ -265,7 +377,7 @@ class FRCHTMLHandler(adsk.core.HTMLEventHandler):
                     ui.messageBox('Invalid part index from HTML.')
                     return
 
-                label, data_file = g_cots_files[idx]
+                label, data_file, _ = g_cots_files[idx]
 
                 # Get current canvas selections as targets
                 sels = ui.activeSelections
@@ -297,7 +409,7 @@ class FRCHTMLHandler(adsk.core.HTMLEventHandler):
                     fav = False
 
                 if 0 <= idx < len(g_cots_files):
-                    _label, df = g_cots_files[idx]
+                    _label, df, _thumbidx = g_cots_files[idx]
                     g_favorites[df.id] = fav
                     save_favorites()
                 return
@@ -313,8 +425,14 @@ def run(context):
         load_favorites()
         load_cots_files(app)
 
+        stopFlag = threading.Event()
+        thumbThread = ThumbnailThread(stopFlag)
+        thumbThread.start()
+
         # Pre-create the HTML palette so it is ready when the button is pressed
-        get_or_create_palette(ui)
+        palette = get_or_create_palette(ui)
+        load_palette(ui)
+        palette.isVisible = False
 
         cmd_id = 'FRC_InsertCOTS'
         cmd_def = ui.commandDefinitions.itemById(cmd_id)
@@ -330,29 +448,10 @@ def run(context):
                 super().__init__()
 
             def notify(self, args):
-                try:
-                    # Refresh COTS list in case the project changed
-                    load_cots_files(app)
-                    palette = get_or_create_palette(ui)
-                    if palette:
-                        try:
-                            palette.isVisible = True
-                        except:
-                            # If Fusion is unhappy about toggling visibility, just ignore it.
-                            pass
 
-                        parts = []
-                        for idx, (label, df) in enumerate(g_cots_files):
-                            parts.append({
-                                'index': idx,
-                                'label': label,
-                                'favorite': g_favorites.get(df.id, False)
-                            })
-                        palette.sendInfoToHTML('partsList', json.dumps(parts))
-                except:
-                    ui.messageBox(
-                        'ShowPaletteCreated failed:\n{}'.format(traceback.format_exc())
-                    )
+                futil.log(f'ShowPaletteCreatedHandler::notify()...')
+
+                load_palette(ui)
 
         on_created = ShowPaletteCreatedHandler()
         cmd_def.commandCreated.add(on_created)
