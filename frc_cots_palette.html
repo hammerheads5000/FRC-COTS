@@ -1,3 +1,9 @@
+<!--
+    Javascript debugger can be activated by entering: devoptions.webdeveloperextras /on 
+    in the TextCommand window then right-clicking the palette and opening the DevTools
+    or by turning on Developer Tools in the preferences under General->API
+-->
+
 <!DOCTYPE html>
 <html>
 <head>
@@ -268,7 +274,7 @@
       width: 40px;
       height: 40px;
       border-radius: 6px;
-      background: #202638;
+      background: #f7f7f8;
       margin-right: 8px;
       display: flex;
       align-items: center;
@@ -716,6 +722,7 @@
       handle: function (action, data) {
         try {
           if (action === "partsList") {
+            console.log( 'Loading parts list...')
             const parts = JSON.parse(data || "[]");
             if (Array.isArray(parts)) {
               allParts = parts.map((p) => ({
@@ -772,6 +779,13 @@
       try {
         if (typeof adsk !== "undefined" && adsk.fusionSendData) {
           adsk.fusionSendData("requestParts", "");
+        } else {
+          console.log( 'Retrying parts request ', requestPartsTries );
+          requestPartsTries = requestPartsTries + 1
+          if( requestPartsTries < 20 ) {
+            // try again if we haven't tried 20 times yet.
+            setTimeout(function(){requestPartsFromFusion()}, 100);
+          }
         }
       } catch (e) {
         console.error("requestParts error:", e);
@@ -788,6 +802,11 @@
         console.error("insertPart send error:", e);
       }
     }
+
+    // For some reason we need to delay requesting parts a tiny bit...
+    requestPartsTries = 1
+    requestPartsFromFusion();
+
   </script>
 </body>
 </html>

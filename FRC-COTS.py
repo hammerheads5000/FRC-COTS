@@ -260,12 +260,13 @@ def load_palette(ui):
                     'favorite': g_favorites.get(df.id, False),
                     'thumb': get_icon_filename(thumbidx)
                 })
+            futil.log(f'   Sending {len(g_cots_files)} records to palette...')
             palette.sendInfoToHTML('partsList', json.dumps(parts))
     except:
         futil.handle_error('load_palette failed:')
 
 
-def get_or_create_palette(ui):
+def get_or_create_palette(ui: adsk.core.UserInterface) -> adsk.core.Palette:
     """Create or return the HTML palette used to browse COTS parts."""
     global g_palette
 
@@ -358,15 +359,6 @@ class FRCHTMLHandler(adsk.core.HTMLEventHandler):
 
             # HTML asks for the list of parts
             if action == 'requestParts':
-                # parts = []
-                # for idx, (label, df, thumbidx) in enumerate(g_cots_files):
-                #     parts.append({
-                #         'index': idx,
-                #         'label': label,
-                #         'favorite': g_favorites.get(df.id, False),
-                #         'thumb': get_icon_filename(thumbidx)
-                #     })
-                # args.palette.sendInfoToHTML('partsList', json.dumps(parts))
                 load_palette(ui)
                 return
 
@@ -469,9 +461,7 @@ def run(context):
         thumbThread = ThumbnailThread(stopFlag)
         thumbThread.start()
 
-        # Pre-create the HTML palette so it is ready when the button is pressed
         load_palette(ui)
-        # palette.isVisible = False
 
     except:
         ui.messageBox('Add-in run failed:\n{}'.format(traceback.format_exc()))

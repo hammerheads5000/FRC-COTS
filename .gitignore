@@ -1,2 +1,4 @@
 icons/icon*
 __pycache__
+.env
+.vscode/settings.json
