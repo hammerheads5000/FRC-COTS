@@ -52,7 +52,6 @@ class FolderRecord:
         self.parentFolder = parent
         self._files = {}  # [id] -> FileRecord
         self.name = name
-        self.has_placeholder = False
         if parent:
             self.path = parent.path + name + '/'
         else:
@@ -377,11 +376,12 @@ class PartsDatabase:
         id = path + '_placeholder_'
         self.add_part(id, path, '_placeholder_', '')
 
-    def remove_folder_placeholder(self, path):
-        if path == '/':
+    def remove_folder_placeholder(self, path):        
+        id = path + '_placeholder_'
+        if not id in self.database['parts']:
+            # This placeholder is not in the db
             return
         
-        id = path + '_placeholder_'
         self.remove_part(id)
 
     def get_part(self, id):
@@ -438,13 +438,11 @@ class PartsDatabase:
         for fdr in rec._childFolders:
             child: FolderRecord = rec._childFolders[fdr]
             if len(child._files) == 0 and len(child._childFolders) == 0:
-                child.has_placeholder = True
                 self.add_folder_placeholder(child.path)
 
         # Remove the placeholder entry for this folders if
         # we now have either child folders or files
-        if (len(rec._files) > 0 or len(rec._childFolders)) > 0 and rec.has_placeholder:
-            rec.has_placeholder = False
+        if (len(rec._files) > 0 or len(rec._childFolders)) > 0:
             self.remove_folder_placeholder(rec.path)
 
     def sync_record_with_database(self, rec: FolderRecord):
@@ -595,11 +593,16 @@ class DatabaseThread(threading.Thread):
             send_event_to_main_thread('set_busy', '0' )
 
             g_parts_db.save_json_file()
-
+            busy_idx = 0
+            busy_rounds = ['|', '/', '-', '\\']
             if g_parts_db.building:
-                send_event_to_main_thread('status', 'Building index...' )
+                busy_text = 'Building index...'
             else:
-                send_event_to_main_thread('status', 'Updating...' )
+                busy_text = 'Updating...'
+
+            busy_update_time = time.time()
+            send_event_to_main_thread('status', busy_text + busy_rounds[busy_idx % 4] )
+            busy_idx += 1
 
             # Fire an event that tells the Palette to refresh.
             send_event_to_main_thread('update', '' )
@@ -617,6 +620,13 @@ class DatabaseThread(threading.Thread):
                 # Now process other folders that have not been refreshed
                 if current_job and not current_job.done():
                     time.sleep(0.02)
+                    # Update the busy text to spin around.
+                    if time.time() - busy_update_time > 0.5:
+                        msg = busy_text + busy_rounds[busy_idx % 4]
+                        send_event_to_main_thread('status', msg)
+                        busy_idx += 1
+                        busy_update_time = time.time()
+
                     current_job.run_step()
                     if current_job.done():
                         current_job = g_update_queue.pop()
@@ -630,12 +640,16 @@ class DatabaseThread(threading.Thread):
                 if not current_job:
                     if g_update_queue.empty():                        
                         # Nothing to do just sleep for a bit
+                        busy_text = 'Updating...'
                         time.sleep( 0.1 )
                     else:
                         # Grab a new job
                         current_job = g_update_queue.pop()
                         if current_job:
-                            send_event_to_main_thread('status', 'Updating...' )
+                            msg = busy_text + busy_rounds[busy_idx % 4]
+                            send_event_to_main_thread('status', msg)
+                            busy_idx += 1
+                            busy_update_time = time.time()
 
             g_parts_db.save_json_file()
             futil.log(f'DatabaseThread() -- Finishing normally...')

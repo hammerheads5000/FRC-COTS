@@ -51,6 +51,14 @@ def _ensure_file_paths_exist():
 
     return True
 
+def _delete_all_icons():
+    icon_path = os.path.join(config.PARTS_DB_PATH, 'icons')
+    for f in os.listdir(icon_path):
+        try:
+            os.remove(os.path.join(icon_path,f))
+        except:
+            pass
+        
 def _favorites_path():
     """Path to the favorites JSON file next to this add-in."""
     folder = config.PARTS_DB_PATH
@@ -453,6 +461,8 @@ def stop(context):
         if g_dbThread:
             g_dbThread.stop()
             g_dbThread.join()
+
+        _delete_all_icons()
 
         # Remove the toolbar button
         solid_ws = ui.workspaces.itemById('FusionSolidEnvironment')
