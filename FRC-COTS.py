@@ -395,6 +395,15 @@ def run(context):
             def notify(self, args):
 
                 futil.log(f'ShowPaletteCreatedHandler::notify()...')
+                palette = get_or_create_palette(ui)
+                if not palette:
+                    return
+        
+                try:
+                    palette.isVisible = True
+                except:
+                    # If Fusion is unhappy about toggling visibility, just ignore it.
+                    pass
 
                 load_palette()
 

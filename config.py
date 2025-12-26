@@ -21,7 +21,7 @@ COMPANY_NAME = 'ACME'
 sample_palette_id = f'{COMPANY_NAME}_{ADDIN_NAME}_palette_id'
 
 # Parts Database Project
-PARTS_DB_PROJECT = 'VendorParts'
+PARTS_DB_PROJECT = 'FRC_COTS'
 # PARTS_DB_FOLDER = os.path.dirname(__file__)
 PARTS_DB_FOLDER = os.path.expanduser('~')
 PARTS_DB_PATH = os.path.join(PARTS_DB_FOLDER, 'FRC-COTS_db')
