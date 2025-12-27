@@ -269,6 +269,20 @@ def create_palette() -> adsk.core.Palette:
     g_palette = pal
     return pal
 
+# Event handler for the startupCompleted event.
+# Need this when this Add-In is loaded on startup
+class MyStartupCompletedHandler(adsk.core.ApplicationEventHandler):
+    def __init__(self):
+        super().__init__()
+    def notify(self, args: adsk.core.ApplicationEventArgs):
+        global g_dbThread
+
+        futil.log('In MyStartupCompletedHandler event handler.')
+        # Start the database thread
+        if not g_dbThread:
+            g_dbThread = database_thread.DatabaseThread()
+            g_dbThread.start()
+
 class DatabaseThreadEventHandler(adsk.core.CustomEventHandler):
     def __init__(self):
         super().__init__()
@@ -442,6 +456,11 @@ def run(context):
                 ICON_FOLDER
             )
 
+        # Handle the startupCompleted event.
+        onStartupCompleted = MyStartupCompletedHandler()
+        app.startupCompleted.add(onStartupCompleted)
+        handlers.append(onStartupCompleted)
+
         global customEvent
         customEvent = app.registerCustomEvent(database_thread.myCustomEvent)
         onThreadEvent = DatabaseThreadEventHandler()
@@ -464,9 +483,13 @@ def run(context):
         # Load favorites 
         load_favorites()
 
-        # Start the database thread
-        g_dbThread = database_thread.DatabaseThread()
-        g_dbThread.start()
+        # Check if startup is already complete.  This is True when
+        # the add-in is run manually from the add-ins table.
+        if app.isStartupComplete:
+            # Call the startup handler to start the database thread.
+            MyStartupCompletedHandler.notify('')
+
+        futil.log(f'  run() -- Startup completed = {app.isStartupComplete}')
 
     except:
         ui.messageBox('Add-in run failed:\n{}'.format(traceback.format_exc()))

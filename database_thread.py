@@ -131,7 +131,6 @@ class FolderViewedJob(FolderUpdateJob):
     def run_step(self):
         # Returns True if there is more to be done.
         global g_parts_db
-        global g_update_queue
 
         # futil.log(f'Running step {self.phase} on folder {self.record.path}')
 
@@ -573,7 +572,7 @@ def find_project():
 
         if not frc_project:
             futil.log(f"Could not find project '{config.PARTS_DB_PROJECT}'.")
-            return frc_project
+            return None
     except:
         futil.handle_error(f"Error loading project '{config.PARTS_DB_PROJECT}'.")
 
@@ -607,8 +606,7 @@ class DatabaseThread(threading.Thread):
 
             # Load the parts database
             g_parts_db = PartsDatabase(g_parts_db_io)
-
-            send_event_to_main_thread('set_busy', '0' )
+            send_event_to_main_thread('set_busy', '1' )
 
             g_parts_db.save_json_file()
             busy_idx = 0
@@ -626,6 +624,8 @@ class DatabaseThread(threading.Thread):
             send_event_to_main_thread('update', '' )
 
             current_job = g_update_queue.pop()
+            first_job = True
+
             # Start the main processing loop for the database thread...
             while self.isRunning():
                 # Check if there are thumbnail images to process
@@ -648,6 +648,12 @@ class DatabaseThread(threading.Thread):
                     current_job.run_step()
                     if current_job.done():
                         current_job = g_update_queue.pop()
+                        if first_job:
+                            # Remove the busy overlay and update the parts
+                            send_event_to_main_thread('set_busy', '0' )
+                            send_event_to_main_thread('update', '' )
+                            first_job = False
+
 
                         if not current_job:
                             # We just finished the last job in the queue
