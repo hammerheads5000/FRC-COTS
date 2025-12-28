@@ -5,7 +5,7 @@
 	"description": {
 	"": "FRC COTS library browser"
 	},
-	"version": "1.0.0",
+	"version": "1.1.0",
 	"runOnStartup": false,
 	"supportedOS": "windows|mac",
 	"editEnabled": true,
