@@ -340,9 +340,6 @@ class PartsDatabase:
         self.mutex = threading.Lock()
         self.database = {}
         self.building = False
-        self.database['project'] = {}
-        self.database['parts'] = {}
-        self.database['paths'] = {}
 
         if not self.load_json_file():
             self.blank_database()
@@ -353,15 +350,18 @@ class PartsDatabase:
             futil.log(f'   Regenerating the JSON database...')
             self.blank_database()
 
-        if len(self.database['parts']) == 0:
-            self.update_folder('/')
-
     def blank_database(self):
         self.database = {}
         self.building = True
         self.database['project'] = {'name': self.io.project.name, 'id': self.io.project.id }
         self.database['parts'] = {}
         self.database['paths'] = {}
+
+    def is_built(self):
+        return self.database['built']
+
+    def build_complete(self):
+        self.database['built'] = True
 
     def add_part(self, id, path, name, version):
         
@@ -598,21 +598,31 @@ class DatabaseThread(threading.Thread):
         try:
             futil.log(f'DatabaseThread::run()...')
 
-            # Create the parts file IO database
+            # Find the COTS database
             project = find_project(config.PARTS_DB_PROJECT)
             if not project:
                 return
             
+            # Create the parts file IO database
             g_parts_db_io = PartsDatabaseFileIO(project)
-
-            # Create the update queue and add the root folder to it.
-            g_update_queue = FolderUpdateQueue(FolderUpdateJob(g_parts_db_io.rootRec))
 
             # Load the parts database
             g_parts_db = PartsDatabase(g_parts_db_io)
+
+            if g_parts_db.is_built():
+                # Just refresh the root folder
+                job = FolderViewedJob(g_parts_db_io.rootRec)
+            else:
+                # Refresh the root folder and all subfolders
+                job =  FolderUpdateJob(g_parts_db_io.rootRec)
+
+            # Create the update queue and add the root folder job to it.
+            g_update_queue = FolderUpdateQueue(job)
+
             send_event_to_main_thread('set_busy', '1' )
 
             g_parts_db.save_json_file()
+
             busy_idx = 0
             busy_rounds = ['|', '/', '-', '\\']
             if g_parts_db.building:
@@ -662,8 +672,9 @@ class DatabaseThread(threading.Thread):
                         if not current_job:
                             # We just finished the last job in the queue
                             # Save the JSON file to disk
-                            send_event_to_main_thread('status', 'Idle.' )
+                            g_parts_db.build_complete()
                             g_parts_db.save_json_file()
+                            send_event_to_main_thread('status', 'Idle.' )
 
                 if not current_job:
                     if g_update_queue.empty():                        

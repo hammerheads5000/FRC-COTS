@@ -486,8 +486,8 @@ def run(context):
         # Check if startup is already complete.  This is True when
         # the add-in is run manually from the add-ins table.
         if app.isStartupComplete:
-            # Call the startup handler to start the database thread.
-            MyStartupCompletedHandler.notify('')
+            # Manully call the startup handler to start the database thread.
+            onStartupCompleted.notify('')
 
     except:
         ui.messageBox('Add-in run failed:\n{}'.format(traceback.format_exc()))
