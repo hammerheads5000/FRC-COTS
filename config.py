@@ -8,14 +8,24 @@ import os
 # more information is written to the Text Command window. Generally, it's useful
 # to set this to True while developing an add-in and set it to False when you
 # are ready to distribute it.
-DEBUG = True
+DEBUG = False
 
-# Gets the name of the add-in from the name of the folder the py file is in.
-# This is used when defining unique internal names for various UI elements 
-# that need a unique name. It's also recommended to use a company name as 
-# part of the ID to better ensure the ID is unique.
-ADDIN_NAME = os.path.basename(os.path.dirname(__file__))
-COMPANY_NAME = 'ACME'
+# # Gets the name of the add-in from the name of the folder the py file is in.
+# # This is used when defining unique internal names for various UI elements 
+# # that need a unique name. It's also recommended to use a company name as 
+# # part of the ID to better ensure the ID is unique.
+# ADDIN_NAME = os.path.basename(os.path.dirname(__file__))
+# COMPANY_NAME = 'ACME'
 
-# Palettes
-sample_palette_id = f'{COMPANY_NAME}_{ADDIN_NAME}_palette_id'
+# # Palettes
+# sample_palette_id = f'{COMPANY_NAME}_{ADDIN_NAME}_palette_id'
+
+# Parts Database Project
+PARTS_DB_PROJECT = 'FRC_COTS'
+
+# The path to store the database folder (this needs to exist)
+# PARTS_DB_FOLDER = os.path.dirname(__file__)   # Use the folder this file is in
+PARTS_DB_FOLDER = os.path.expanduser('~')       # Use the users home folder (e.g. 'C:\Users\frc_user\')
+
+# The subfolder to put all the data in (will be created)
+PARTS_DB_PATH = os.path.join(PARTS_DB_FOLDER, 'FRC-COTS_db')

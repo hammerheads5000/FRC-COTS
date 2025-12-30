@@ -45,6 +45,9 @@ def log(message: str, level: adsk.core.LogLevels = adsk.core.LogLevels.InfoLogLe
         log_type = adsk.core.LogTypes.ConsoleLogType
         app.log(message, level, log_type)
 
+def log_error(message: str):
+    log('   ---------ERROR--------', adsk.core.LogLevels.ErrorLogLevel, True)
+    log(message, adsk.core.LogLevels.ErrorLogLevel, True)
 
 def handle_error(name: str, show_message_box: bool = False):
     """Utility function to simplify error handling.
@@ -56,8 +59,7 @@ def handle_error(name: str, show_message_box: bool = False):
                         and logged to the log file.                        
     """    
 
-    log('===== Error =====', adsk.core.LogLevels.ErrorLogLevel)
-    log(f'{name}\n{traceback.format_exc()}', adsk.core.LogLevels.ErrorLogLevel)
+    log_error(f'{name}\n{traceback.format_exc()}')
 
     # If desired you could show an error as a message box.
     if show_message_box:

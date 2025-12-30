@@ -1,3 +1,9 @@
+<!--
+    Javascript debugger can be activated by entering: devoptions.webdeveloperextras /on 
+    in the TextCommand window then right-clicking the palette and opening the DevTools
+    or by turning on Developer Tools in the preferences under General->API
+-->
+
 <!DOCTYPE html>
 <html>
 <head>
@@ -68,7 +74,7 @@
       flex-direction: column;
       gap: 8px;
       height: calc(100vh - 16px);
-      max-height: 560px;
+      max-height: 900px;
     }
 
     #headerRow {
@@ -239,8 +245,8 @@
     }
 
     .folderIcon {
-      width: 22px;
-      height: 22px;
+      width: 32px;
+      height: 32px;
       border-radius: 5px;
       margin-right: 8px;
       display: flex;
@@ -265,10 +271,10 @@
     }
 
     .icon {
-      width: 28px;
-      height: 28px;
+      width: 40px;
+      height: 40px;
       border-radius: 6px;
-      background: #202638;
+      background: #f7f7f8;
       margin-right: 8px;
       display: flex;
       align-items: center;
@@ -308,6 +314,14 @@
       text-overflow: ellipsis;
     }
 
+    .statusLine {
+      font-size: 7px;
+      color: var(--fg-subtle);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
     .breadcrumb {
       font-size: 11px;
       color: var(--fg-subtle);
@@ -335,9 +349,32 @@
       color: var(--fg-subtle);
       padding: 8px 10px;
     }
+
+    #overlay {
+      position: fixed;
+      display: block;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0,0,0,0.5);
+      z-index: 20;
+      cursor: pointer;
+    }
+
+    #overlay-content {
+      background: rgb(209, 142, 142);
+      text-align: center;
+    }
+
   </style>
 </head>
 <body>
+  <div id="overlay" >
+    <div style="height: 50%">
+    </div>
+    <div id="overlay-content">
+      LOADING PART DATABASE...
+    </div>
+  </div>
   <div id="appCard">
     <div id="headerRow">
       <div id="titleBlock">
@@ -371,6 +408,12 @@
         or adjust your search.
       </div>
     </div>
+
+    <div id="headerRow">
+      <div id="statusLine">
+        Starting up...
+      </div>
+    </div>
   </div>
 
   <script>
@@ -388,8 +431,10 @@
       folderRoot = { name: "", folders: new Map(), parts: [] };
 
       allParts.forEach((part) => {
-        const segments = part.label.split("/");
-        const fileName = segments.pop(); // name.f3d
+        segments = part.path.split("/");
+//         segments.pop()
+        segments = segments.slice(1,-1)
+        const fileName = part.label; // name.f3d
         let node = folderRoot;
         segments.forEach((seg) => {
           if (!node.folders.has(seg)) {
@@ -404,7 +449,7 @@
         node.parts.push(part);
       });
 
-      currentPath = [];
+//      currentPath = [];
     }
 
     function getFolderNode(path) {
@@ -462,6 +507,7 @@
 
     function renderPartsList() {
       const container = document.getElementById("partsContainer");
+
       const emptyMsg = document.getElementById("emptyMsg");
       container.innerHTML = "";
 
@@ -486,7 +532,8 @@
           const icon = document.createElement("div");
           icon.className = "icon";
           const img = document.createElement("img");
-          const baseName = part.label.split("/").slice(-1)[0];
+          const baseName = part.label;
+          // const baseName = part.label.split("/").slice(-1)[0];
           const safeName = baseName.replace(/\.[^/.]+$/, "");
 
           if (part.thumb) {
@@ -510,9 +557,12 @@
 
           const pathDiv = document.createElement("div");
           pathDiv.className = "pathLine";
-          const folderPath = part.label.includes("/")
-            ? part.label.split("/").slice(0, -1).join(" / ")
+          const folderPath = part.path.includes("/")
+            ? part.path.split("/").join(" / ")
             : "";
+          // const folderPath = part.label.includes("/")
+          //   ? part.label.split("/").slice(0, -1).join(" / ")
+          //   : "";
           pathDiv.textContent = folderPath;
 
           textCol.appendChild(nameDiv);
@@ -538,7 +588,7 @@
               console.error("toggleFavorite send error:", e);
             }
           });
-
+        
           row.addEventListener("click", () => {
             selectedIndex = part.index;
             sendInsertPart(part.index);
@@ -565,6 +615,7 @@
       rootSpan.textContent = "FRC_COTS";
       rootSpan.addEventListener("click", () => {
         currentPath = [];
+        folderSelectionChanged( currentPath );
         renderPartsList();
       });
       breadcrumb.appendChild(rootSpan);
@@ -576,6 +627,7 @@
         span.textContent = seg;
         span.addEventListener("click", () => {
           currentPath = currentPath.slice(0, idx + 1);
+          folderSelectionChanged( currentPath );
           renderPartsList();
         });
         breadcrumb.appendChild(span);
@@ -598,6 +650,7 @@
         upRow.appendChild(upLabel);
         upRow.addEventListener("click", () => {
           currentPath = currentPath.slice(0, -1);
+          folderSelectionChanged( currentPath );
           renderPartsList();
         });
         container.appendChild(upRow);
@@ -623,11 +676,16 @@
 
         fRow.addEventListener("click", () => {
           currentPath = currentPath.concat(fname);
+          folderSelectionChanged( currentPath );
           renderPartsList();
         });
 
         container.appendChild(fRow);
       });
+      // Check for only the placeholder entry for empty folders
+      if( node.parts.length == 1 && node.parts[0].label == '_placeholder_') {
+        node.parts.pop()
+      }
 
       // Parts directly in this folder
       node.parts.forEach((part) => {
@@ -640,7 +698,8 @@
         const icon = document.createElement("div");
         icon.className = "icon";
         const img = document.createElement("img");
-        const baseName = part.label.split("/").slice(-1)[0];
+        const baseName = part.label
+        // const baseName = part.label.split("/").slice(-1)[0];
         const safeName = baseName.replace(/\.[^/.]+$/, "");
 
         if (part.thumb) {
@@ -709,11 +768,14 @@
     window.fusionJavaScriptHandler = {
       handle: function (action, data) {
         try {
+          console.log( 'window.fusionJavaScriptHandler() -- Received action', action);
           if (action === "partsList") {
+            console.log( 'Loading parts list...')
             const parts = JSON.parse(data || "[]");
             if (Array.isArray(parts)) {
               allParts = parts.map((p) => ({
                 index: p.index,
+                path: p.path,
                 label: p.label,
                 favorite: !!p.favorite,
                 thumb: p.thumb || null,
@@ -724,8 +786,11 @@
             selectedIndex = null;
             buildFolderTree();
             applyFilter();
-          } else if (action === "debugger") {
-            debugger;
+          } else if (action === "set_busy") {
+            isBusy = data != '0'
+            setLoadingOverlay( isBusy );
+          } else if (action === "status") {
+            document.getElementById("statusLine").textContent = data;
           } else {
             return "Unexpected action: " + action;
           }
@@ -757,14 +822,26 @@
         // ignore
       }
       applyTheme(initialTheme);
-
-      requestPartsFromFusion();
     });
+
+    function folderSelectionChanged(path) {
+      console.log( 'Selected folder ', path.join('/') );
+      adsk.fusionSendData("folderRequest", path.join('/'));
+    }
 
     function requestPartsFromFusion() {
       try {
         if (typeof adsk !== "undefined" && adsk.fusionSendData) {
+          setLoadingOverlay( false )
+          adsk.fusionSendData("ready", "");
           adsk.fusionSendData("requestParts", "");
+        } else {
+          console.log( 'Retrying parts request ', requestPartsTries );
+          requestPartsTries = requestPartsTries + 1
+          if( requestPartsTries < 20 ) {
+            // try again if we haven't tried 20 times yet.
+            setTimeout(function(){requestPartsFromFusion()}, 100);
+          }
         }
       } catch (e) {
         console.error("requestParts error:", e);
@@ -781,6 +858,22 @@
         console.error("insertPart send error:", e);
       }
     }
+
+    function setLoadingOverlay( isBusy ) {
+      if( isBusy ) {
+        console.log( "Turning overlay ON");
+        document.getElementById("overlay").style.display = "block";
+      } else {
+        console.log( "Turning overlay OFF");
+        document.getElementById("overlay").style.display = "none";
+      }
+    }
+
+    setLoadingOverlay( true )
+    // For some reason we need to delay requesting parts a tiny bit...
+    requestPartsTries = 1
+    requestPartsFromFusion();
+
   </script>
 </body>
 </html>
