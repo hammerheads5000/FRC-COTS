@@ -14,15 +14,19 @@ CMD_NAME = 'FRC_COTS Make Spacer'
 CMD_Description = 'Make a COTS part into a Dynamic Spacer'
 
 # Specify that the command will be promoted to the panel.
-IS_PROMOTED = False
+IS_PROMOTED = True
 
 # TODO *** Define the location where the command button will be created. ***
 # This is done by specifying the workspace, the tab, and the panel, and the 
 # command it will be inserted beside. Not providing the command to position it
 # will insert it at the end.
 WORKSPACE_ID = 'FusionSolidEnvironment'
-PANEL_ID = 'SolidScriptsAddinsPanel'
-COMMAND_BESIDE_ID = 'ScriptsManagerCommand'
+TAB_ID = 'ToolsTab'
+TAB_NAME = 'Make Spacer'
+
+PANEL_ID = f'{config.COMPANY_NAME}_{config.ADDIN_NAME}_makeSpacerPanel'
+PANEL_NAME = 'Make Spacer'
+COMMAND_BESIDE_ID = ''
 
 # Resource location for command icons, here we assume a sub folder in this directory named "resources".
 ICON_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'resources', '')
@@ -45,7 +49,14 @@ def start():
     workspace = ui.workspaces.itemById(WORKSPACE_ID)
 
     # Get the panel the button will be created in.
-    panel = workspace.toolbarPanels.itemById(PANEL_ID)
+    toolbar_tab = workspace.toolbarTabs.itemById(TAB_ID)
+    if toolbar_tab is None:
+        toolbar_tab = workspace.toolbarTabs.add(TAB_ID, TAB_NAME)
+
+    # Get target panel for the command and and create the panel if necessary.
+    panel = toolbar_tab.toolbarPanels.itemById(PANEL_ID)
+    if panel is None:
+        panel = toolbar_tab.toolbarPanels.add(PANEL_ID, PANEL_NAME, '', False)
 
     # Create the button command control in the UI after the specified existing command.
     control = panel.controls.addCommand(cmd_def, COMMAND_BESIDE_ID, False)
@@ -59,6 +70,7 @@ def stop():
     # Get the various UI elements for this command
     workspace = ui.workspaces.itemById(WORKSPACE_ID)
     panel = workspace.toolbarPanels.itemById(PANEL_ID)
+    toolbar_tab = workspace.toolbarTabs.itemById(TAB_ID)
     command_control = panel.controls.itemById(CMD_ID)
     command_definition = ui.commandDefinitions.itemById(CMD_ID)
 
@@ -69,6 +81,14 @@ def stop():
     # Delete the command definition
     if command_definition:
         command_definition.deleteMe()
+
+    # Delete the panel if it is empty
+    if panel.controls.count == 0:
+        panel.deleteMe()
+
+    # Delete the tab if it is empty
+    if toolbar_tab.toolbarPanels.count == 0:
+        toolbar_tab.deleteMe()
 
 
 # Function that is called when a user clicks the corresponding button in the UI.
@@ -82,18 +102,15 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
 
     # TODO Define the dialog for your command by adding different inputs to the command.
 
-    # # Create a selection input for the joint location.
-    # sel = inputs.addSelectionInput('jointing_position', 'Joint:', 'Select face or circle/arc')
-    # sel.addSelectionFilter('PlanarFaces')
-    # sel.addSelectionFilter('CircularEdges')
-    # sel.setSelectionLimits(0, 1)
+    mesg = ('This command makes a Part into a Dynamic Spacer. '
+            'It does this by setting an invisible attribute in the file '
+            'that can be detected when the part is inserted into a design.')
 
-    # # If a joint is already set then put it in the selection
+    # # Create a Text Box for information.
+    text = inputs.addTextBoxCommandInput( 'info', '', mesg, 6, True)
+    text.isFullWidth = True
+
     design: adsk.fusion.Design = app.activeProduct
-    # joint_attrs = design.findAttributes('FRC_COTS', 'joint')
-    # if joint_attrs:
-    #     sel.addSelection( joint_attrs[0].parent )
-
     make_spacer = inputs.addBoolValueInput('make_spacer', 'Make Spacer', True)
     make_spacer.value = is_design_spacer(design)
 

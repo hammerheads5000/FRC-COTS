@@ -570,10 +570,17 @@ class PartsDatabase:
         if os.path.exists(db_filename):
             try:
                 with open(db_filename, 'r') as f:
-                    self.database = json.load(f)
+                    try:
+                        self.mutex.acquire()
+                        self.database = json.load(f)
+                    except:
+                        futil.handle_error( f'Could not read parts db JSON file {db_filename}...')
+                        return False
+                    finally:
+                        self.mutex.release()
                 return True
             except:
-                futil.log( f'Could not open parts db JSON file {db_filename} for reading...')
+                futil.handle_error( f'Could not open parts db JSON file {db_filename} for reading...')
         else:
             futil.log( f'Parts db JSON file {db_filename} does not exist...')
         return False
@@ -582,9 +589,12 @@ class PartsDatabase:
         db_filename = os.path.join( config.PARTS_DB_PATH, PartsDatabase.JSON_FILE )
         try:
             with open(db_filename, 'w') as f:
+                self.mutex.acquire()
                 json.dump(self.database, f, indent=2)
         except Exception:
             futil.handle_error(f"Could not write parts database file '{db_filename}'.")
+        finally:
+            self.mutex.release()
 
 
 def get_data_file( path, data_file_id ):

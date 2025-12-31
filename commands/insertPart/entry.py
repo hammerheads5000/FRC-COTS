@@ -263,10 +263,26 @@ def create_joint_from_entity(entity: adsk.core.Base, occ: adsk.fusion.Occurrence
         pass
 
     if isinstance(entity, adsk.fusion.BRepEdge):
-        joint_geo_target = adsk.fusion.JointGeometry.createByCurve(
-            entity,
-            adsk.fusion.JointKeyPointTypes.CenterKeyPoint
-        )
+        entity = adsk.fusion.BRepEdge.cast(entity)
+        normal = None
+        planeFace = None
+        for face in entity.faces:
+            if isinstance(face.geometry, adsk.core.Plane):
+                planeFace = face
+                _, normal = face.evaluator.getNormalAtPoint(planeFace.centroid)
+                break
+        if normal:
+            joint_geo_target = adsk.fusion.JointGeometry.createByPlanarFace(
+                planeFace,
+                entity,
+                adsk.fusion.JointKeyPointTypes.CenterKeyPoint
+            )
+            isFlipped = True
+        else:
+            joint_geo_target = adsk.fusion.JointGeometry.createByCurve(
+                entity,
+                adsk.fusion.JointKeyPointTypes.CenterKeyPoint
+            )
 
     elif isinstance(entity, adsk.fusion.BRepFace):
         face = entity

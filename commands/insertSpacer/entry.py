@@ -195,12 +195,12 @@ def command_preview(args: adsk.core.CommandEventArgs):
 
     joint_part(root_comp, target, new_occ, force_flip)
 
-    distance = adsk.core.ValueInput.createByReal(spacer_length - model_length.value)
+    offset_dist = adsk.core.ValueInput.createByReal(spacer_length - model_length.value)
     # distance = adsk.core.ValueInput.createByReal(distanceInp.value)
-    offset_input = root_comp.features.offsetFacesFeatures.createInput( [offset_face], distance)
+    offset_input = root_comp.features.offsetFacesFeatures.createInput( [offset_face], offset_dist)
     root_comp.features.offsetFacesFeatures.add(offset_input)
 
-    new_occ.component.name = g_dataFile.name + f' x {selection_distance.value/2.54:.3f}in'
+    new_occ.component.name = g_dataFile.name + f' x {spacer_length/2.54:.3f}in'
 
     args.isValidResult = True
 
@@ -220,7 +220,7 @@ def command_input_changed(args: adsk.core.InputChangedEventArgs):
     distanceInp: adsk.core.ValueCommandInput = inputs.itemById('spacer_length')
 
     if changed_input.id == 'target_entity' :
-        if target_selInput.selectionCount > 0 :
+        if target_selInput.selectionCount > 0 and extentInp.isVisible:
             extentInp.hasFocus = True
 
     if changed_input.id == 'extent_selection' :
@@ -236,6 +236,7 @@ def command_input_changed(args: adsk.core.InputChangedEventArgs):
             extentInp.setSelectionLimits(1, 1)
             distanceInp.isVisible = False
             extentInp.isVisible = True
+            extentInp.hasFocus = True
 
 # This event handler is called when the user interacts with any of the inputs in the dialog
 # which allows you to verify that all of the inputs are valid and enables the OK button.
