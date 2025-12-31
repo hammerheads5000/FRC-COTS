@@ -99,22 +99,26 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
         'extent_type', 'Extent Type', adsk.core.DropDownStyles.LabeledIconDropDownStyle
     )
     dditems = extentType.listItems
-    dditems.add('Distance', True, os.path.join(ICON_FOLDER, 'Dist'))
-    dditems.add('To Object', False, os.path.join(ICON_FOLDER, 'To'))
+    dditems.add('Distance', False, os.path.join(ICON_FOLDER, 'Dist'))
+    dditems.add('To Object', True, os.path.join(ICON_FOLDER, 'To'))
 
     # Create a selection input for the joint location.
     extent = inputs.addSelectionInput('extent_selection', 'Object', 'Select face, point, or edge')
     extent.addSelectionFilter('PlanarFaces')
     extent.addSelectionFilter('CircularEdges')
     extent.addSelectionFilter('Vertices')
-    extent.setSelectionLimits(0, 1)
-    extent.isVisible = False
+    extent.setSelectionLimits(1, 1)
+    extent.isVisible = True
 
     # Create a value input field and set the default using 1 unit of the default length unit.
     defaultLengthUnits = app.activeProduct.unitsManager.defaultLengthUnits
     default_value = adsk.core.ValueInput.createByString('1')
-    inputs.addValueInput('spacer_length', 'Distance', defaultLengthUnits, default_value)
+    distInp = inputs.addValueInput('spacer_length', 'Distance', defaultLengthUnits, default_value)
+    distInp.isVisible = False
 
+    default_value = adsk.core.ValueInput.createByString('0')
+    startOffset = inputs.addValueInput('start_offset', 'Start Offset', defaultLengthUnits, default_value)
+    endOffset = inputs.addValueInput('end_offset', 'End Offset', defaultLengthUnits, default_value)
 
     flipInp = inputs.addBoolValueInput('force_flip', 'Flip', True, os.path.join(ICON_FOLDER, 'Flip'))
 
@@ -156,26 +160,28 @@ def command_preview(args: adsk.core.CommandEventArgs):
     target_entity = target_selInput.selection(0).entity
 
     extentInp: adsk.core.SelectionCommandInput = inputs.itemById('extent_selection')
-
     extentType: adsk.core.DropDownCommandInput = inputs.itemById('extent_type')
-
     distanceInp: adsk.core.ValueCommandInput = inputs.itemById('spacer_length')
+    startOffset: adsk.core.ValueCommandInput = inputs.itemById('start_offset')
+    endOffset: adsk.core.ValueCommandInput = inputs.itemById('end_offset')
 
     flipInp: adsk.core.BoolValueCommandInput = inputs.itemById('force_flip')
     force_flip = flipInp.value
-    
+
     # Determine how long the spacer should be
     spacer_length = 2.0 * 2.54
     if extentType.selectedItem.name == 'Distance':
-        spacer_length = distanceInp.value
+        spacer_length = distanceInp.value + startOffset.value
     else:
         extent = extentInp.selection(0).entity
         selection_distance = app.measureManager.measureMinimumDistance(target_entity, extent)
-        spacer_length = selection_distance.value
+        spacer_length = selection_distance.value + startOffset.value + endOffset.value
 
     design: adsk.fusion.Design = adsk.fusion.Design.cast(app.activeProduct)
 
     root_comp = design.rootComponent
+
+    start_timeline_pos = design.timeline.markerPosition
 
     target = target_selInput.selection(0).entity
 
@@ -187,6 +193,12 @@ def command_preview(args: adsk.core.CommandEventArgs):
         False  # reference to original design
     )
 
+    insert = design.timeline.item(start_timeline_pos)
+    if insert.isGroup:
+        # Delete the group so the whole command can be grouped
+        insert = adsk.fusion.TimelineGroup.cast(insert)
+        insert.deleteMe(False)
+
     new_occ.isGroundToParent = False
 
     top_face = find_offset_face(new_occ, True)
@@ -195,12 +207,19 @@ def command_preview(args: adsk.core.CommandEventArgs):
 
     joint_part(root_comp, target, new_occ, force_flip)
 
-    offset_dist = adsk.core.ValueInput.createByReal(spacer_length - model_length.value)
-    # distance = adsk.core.ValueInput.createByReal(distanceInp.value)
-    offset_input = root_comp.features.offsetFacesFeatures.createInput( [offset_face], offset_dist)
+    bottom_dist = adsk.core.ValueInput.createByReal(spacer_length - model_length.value - startOffset.value)
+    offset_input = root_comp.features.offsetFacesFeatures.createInput( [offset_face], bottom_dist)
+    root_comp.features.offsetFacesFeatures.add(offset_input)
+
+    top_dist = adsk.core.ValueInput.createByReal(startOffset.value)
+    offset_input = root_comp.features.offsetFacesFeatures.createInput( [top_face], top_dist)
     root_comp.features.offsetFacesFeatures.add(offset_input)
 
     new_occ.component.name = g_dataFile.name + f' x {spacer_length/2.54:.3f}in'
+
+    end_timeline_pos = design.timeline.markerPosition - 1
+    grp = design.timeline.timelineGroups.add( start_timeline_pos, end_timeline_pos )
+    grp.name = "Insert Spacer"
 
     args.isValidResult = True
 
@@ -218,6 +237,7 @@ def command_input_changed(args: adsk.core.InputChangedEventArgs):
     extentInp: adsk.core.SelectionCommandInput = inputs.itemById('extent_selection')
     extentType: adsk.core.DropDownCommandInput = inputs.itemById('extent_type')
     distanceInp: adsk.core.ValueCommandInput = inputs.itemById('spacer_length')
+    endOffset: adsk.core.ValueCommandInput = inputs.itemById('end_offset')
 
     if changed_input.id == 'target_entity' :
         if target_selInput.selectionCount > 0 and extentInp.isVisible:
@@ -232,11 +252,18 @@ def command_input_changed(args: adsk.core.InputChangedEventArgs):
             extentInp.setSelectionLimits(0, 1)
             distanceInp.isVisible = True
             extentInp.isVisible = False
+            endOffset.isVisible = False
+            if target_selInput.selectionCount == 0:
+                target_selInput.hasFocus = True
         else:
             extentInp.setSelectionLimits(1, 1)
             distanceInp.isVisible = False
             extentInp.isVisible = True
-            extentInp.hasFocus = True
+            endOffset.isVisible = True
+            if target_selInput.selectionCount == 0:
+                target_selInput.hasFocus = True
+            else:
+                extentInp.hasFocus = True
 
 # This event handler is called when the user interacts with any of the inputs in the dialog
 # which allows you to verify that all of the inputs are valid and enables the OK button.
@@ -262,17 +289,23 @@ def command_destroy(args: adsk.core.CommandEventArgs):
     global local_handlers
     local_handlers = []
 
-def find_offset_face(occ: adsk.fusion.Occurrence, topFace: bool = False):
+def find_offset_face( occ: adsk.fusion.Occurrence, topFace: bool = False):
     if occ.bRepBodies.count > 1:
         futil.log(f'Cannot handle spacers with more than one body!')
         return None
+    
+    # Default to top face pointing in the positive Z-direction
+    plus_Z = adsk.core.Vector3D.create(0,0,1)
+    if occ.component.jointOrigins.count > 0:
+        joint_origin = occ.component.jointOrigins.item(0)
+        # Use the joint origin primary direction
+        plus_Z = joint_origin.primaryAxisVector
     
     dotProd = -1.0
     if topFace:
         dotProd = 1.0
     
     body = occ.bRepBodies.item(0)
-    plus_Z = adsk.core.Vector3D.create(0,0,1)
     for face in body.faces:
         ok, normal = face.evaluator.getNormalAtPoint(face.centroid)
         # futil.log(f'Evaluator normal = {normal.x},{normal.y},{normal.z}')
