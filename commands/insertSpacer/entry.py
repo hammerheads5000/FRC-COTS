@@ -199,21 +199,22 @@ def command_preview(args: adsk.core.CommandEventArgs):
         insert = adsk.fusion.TimelineGroup.cast(insert)
         insert.deleteMe(False)
 
-    new_occ.isGroundToParent = False
-
     top_face = find_offset_face(new_occ, True)
     offset_face = find_offset_face(new_occ)
     model_length = app.measureManager.measureMinimumDistance(top_face, offset_face)
 
     joint_part(root_comp, target, new_occ, force_flip)
 
-    bottom_dist = adsk.core.ValueInput.createByReal(spacer_length - model_length.value - startOffset.value)
-    offset_input = root_comp.features.offsetFacesFeatures.createInput( [offset_face], bottom_dist)
-    root_comp.features.offsetFacesFeatures.add(offset_input)
+    bottom_dist = spacer_length - model_length.value - startOffset.value
+    if abs(bottom_dist) > 0.0001:
+        bottom_distInp = adsk.core.ValueInput.createByReal(bottom_dist)
+        offset_input = root_comp.features.offsetFacesFeatures.createInput( [offset_face], bottom_distInp)
+        root_comp.features.offsetFacesFeatures.add(offset_input)
 
-    top_dist = adsk.core.ValueInput.createByReal(startOffset.value)
-    offset_input = root_comp.features.offsetFacesFeatures.createInput( [top_face], top_dist)
-    root_comp.features.offsetFacesFeatures.add(offset_input)
+    if abs(startOffset.value) > 0.0001:
+        top_dist = adsk.core.ValueInput.createByReal(startOffset.value)
+        offset_input = root_comp.features.offsetFacesFeatures.createInput( [top_face], top_dist)
+        root_comp.features.offsetFacesFeatures.add(offset_input)
 
     new_occ.component.name = g_dataFile.name + f' x {spacer_length/2.54:.3f}in'
 
@@ -222,7 +223,9 @@ def command_preview(args: adsk.core.CommandEventArgs):
     grp.name = "Insert Spacer"
 
     args.isValidResult = True
-
+    
+    # This was needed once debugging output was turned off....
+    app.activeViewport.refresh()
 
 # This event handler is called when the user changes anything in the command dialog
 # allowing you to modify values of other inputs based on that change.
@@ -249,6 +252,7 @@ def command_input_changed(args: adsk.core.InputChangedEventArgs):
 
     if changed_input.id == 'extent_type' :
         if extentType.selectedItem.name == 'Distance':
+            extentInp.clearSelection()
             extentInp.setSelectionLimits(0, 1)
             distanceInp.isVisible = True
             extentInp.isVisible = False

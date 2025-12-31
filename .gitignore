@@ -1,4 +1,5 @@
-icons
 __pycache__
 .env
-.vscode/
+.vscode/*
+!.vscode/tasks.json
+build
