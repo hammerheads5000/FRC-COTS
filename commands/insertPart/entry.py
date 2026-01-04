@@ -77,6 +77,9 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     sel.addSelectionFilter('PlanarFaces')
     sel.addSelectionFilter('CircularEdges')
     sel.addSelectionFilter('JointOrigins')
+    sel.addSelectionFilter('SketchPoints')
+    sel.addSelectionFilter('ConstructionPoints')
+    sel.addSelectionFilter('Vertices')
     sel.setSelectionLimits(1, 0)
 
     # zero = adsk.core.ValueInput.createByReal(0)
@@ -347,6 +350,13 @@ def create_joint_from_entity(entity: adsk.core.Base, occ: adsk.fusion.Occurrence
                 face,
                 None
             )
+
+    elif isinstance(entity, adsk.fusion.BRepVertex):
+        joint_geo_target = adsk.fusion.JointGeometry.createByPoint(entity)
+    elif isinstance(entity, adsk.fusion.ConstructionPoint):
+        joint_geo_target = adsk.fusion.JointGeometry.createByPoint(entity)
+    elif isinstance(entity, adsk.fusion.SketchPoint):
+        joint_geo_target = adsk.fusion.JointGeometry.createByPoint(entity)
 
     elif isinstance(entity, adsk.fusion.JointOrigin):
         joint_geo_target = entity

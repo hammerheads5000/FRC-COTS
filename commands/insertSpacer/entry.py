@@ -76,6 +76,9 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     sel.addSelectionFilter('PlanarFaces')
     sel.addSelectionFilter('CircularEdges')
     sel.addSelectionFilter('JointOrigins')
+    sel.addSelectionFilter('SketchPoints')
+    sel.addSelectionFilter('ConstructionPoints')
+    sel.addSelectionFilter('Vertices')
     sel.setSelectionLimits(1, 1)
 
     extentType = inputs.addDropDownCommandInput(
@@ -85,10 +88,12 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     dditems.add('Distance', False, os.path.join(ICON_FOLDER, 'Dist'))
     dditems.add('To Object', True, os.path.join(ICON_FOLDER, 'To'))
 
-    # Create a selection input for the joint location.
+    # Create a selection input for the 'To Object' selection.
     extent = inputs.addSelectionInput('extent_selection', 'Object', 'Select face, point, or edge')
     extent.addSelectionFilter('PlanarFaces')
     extent.addSelectionFilter('CircularEdges')
+    extent.addSelectionFilter('SketchPoints')
+    extent.addSelectionFilter('ConstructionPoints')
     extent.addSelectionFilter('Vertices')
     extent.setSelectionLimits(1, 1)
     extent.isVisible = True
@@ -102,6 +107,16 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     default_value = adsk.core.ValueInput.createByString('0')
     startOffset = inputs.addValueInput('start_offset', 'Start Offset', defaultLengthUnits, default_value)
     endOffset = inputs.addValueInput('end_offset', 'End Offset', defaultLengthUnits, default_value)
+
+    # Create a selection input for multiple copies.
+    copies = inputs.addSelectionInput('spacer_copies', 'Copies', 'Select face, point, or edge')
+    copies.addSelectionFilter('PlanarFaces')
+    copies.addSelectionFilter('CircularEdges')
+    copies.addSelectionFilter('SketchPoints')
+    copies.addSelectionFilter('ConstructionPoints')
+    copies.addSelectionFilter('Vertices')
+    copies.setSelectionLimits(0, 0)
+    copies.isVisible = True
 
     flipInp = inputs.addBoolValueInput('force_flip', 'Flip', True, os.path.join(ICON_FOLDER, 'Flip'))
 
@@ -128,7 +143,7 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
 
 # Only allow selection of an extent entity with a parallel plane to the target entity
 def command_preselect(args: adsk.core.SelectionEventArgs):
-    inputs = args.firingEvent.sender.commandInputs
+    inputs: adsk.core.CommandInputs = args.firingEvent.sender.commandInputs
 
     targetInp: adsk.core.SelectionCommandInput = inputs.itemById('target_entity')
     extentInp: adsk.core.SelectionCommandInput = inputs.itemById('extent_selection')
@@ -136,13 +151,17 @@ def command_preselect(args: adsk.core.SelectionEventArgs):
     if targetInp.selectionCount == 0 and extentInp.selectionCount == 0:
         return
     
+    already_selected = None
     if args.activeInput.id == extentInp.id:
         # We are selecting the extent selection
         already_selected = targetInp
-    elif args.activeInput.id == targetInp.id:
+    elif args.activeInput.id == targetInp.id and extentInp.isVisible:
         # We are selecting the target selection
         already_selected = extentInp
     else:
+        return
+    
+    if not already_selected:
         return
     
     target = already_selected.selection(0).entity
@@ -170,6 +189,7 @@ def command_preview(args: adsk.core.CommandEventArgs):
     distanceInp: adsk.core.ValueCommandInput = inputs.itemById('spacer_length')
     startOffset: adsk.core.ValueCommandInput = inputs.itemById('start_offset')
     endOffset: adsk.core.ValueCommandInput = inputs.itemById('end_offset')
+    copies: adsk.core.SelectionCommandInput = inputs.itemById('spacer_copies')
 
     flipInp: adsk.core.BoolValueCommandInput = inputs.itemById('force_flip')
     force_flip = flipInp.value
@@ -233,6 +253,12 @@ def command_preview(args: adsk.core.CommandEventArgs):
 
     new_occ.component.name = g_dataFile.name + f' x {spacer_length/2.54:.3f}in'
 
+    if copies.selectionCount > 0:
+        for sidx in range(copies.selectionCount):
+            copy_location_entity = copies.selection(sidx).entity
+            copy_occ = occs.addExistingComponent(new_occ.component, transform)
+            joint_part(active_comp, copy_location_entity, copy_occ, force_flip ^ extrude_flip)
+
     end_timeline_pos = design.timeline.markerPosition - 1
     grp = design.timeline.timelineGroups.add( start_timeline_pos, end_timeline_pos )
     grp.name = "Insert Spacer"
@@ -256,16 +282,22 @@ def command_input_changed(args: adsk.core.InputChangedEventArgs):
     extentType: adsk.core.DropDownCommandInput = inputs.itemById('extent_type')
     distanceInp: adsk.core.ValueCommandInput = inputs.itemById('spacer_length')
     endOffset: adsk.core.ValueCommandInput = inputs.itemById('end_offset')
+    copiesInp: adsk.core.SelectionCommandInput = inputs.itemById('spacer_copies')
 
     if changed_input.id == 'target_entity' :
-        if target_selInput.selectionCount > 0 and extentInp.isVisible:
-            extentInp.hasFocus = True
+        if target_selInput.selectionCount > 0:
+            if extentInp.isVisible:
+                extentInp.hasFocus = True
+            else:
+                copiesInp.hasFocus = True
 
-    if changed_input.id == 'extent_selection' :
-        if extentInp.selectionCount == 0 and target_selInput.selectionCount == 0 :
+    elif changed_input.id == 'extent_selection' :
+        if target_selInput.selectionCount == 0 :
             target_selInput.hasFocus = True
-
-    if changed_input.id == 'extent_type' :
+        else:
+            copiesInp.hasFocus = True
+            
+    elif changed_input.id == 'extent_type' :
         if extentType.selectedItem.name == 'Distance':
             extentInp.clearSelection()
             extentInp.setSelectionLimits(0, 1)
