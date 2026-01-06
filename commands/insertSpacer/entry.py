@@ -143,6 +143,8 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
 
 # Only allow selection of an extent entity with a parallel plane to the target entity
 def command_preselect(args: adsk.core.SelectionEventArgs):
+    global g_dataFile
+
     inputs: adsk.core.CommandInputs = args.firingEvent.sender.commandInputs
 
     targetInp: adsk.core.SelectionCommandInput = inputs.itemById('target_entity')
@@ -158,10 +160,18 @@ def command_preselect(args: adsk.core.SelectionEventArgs):
     elif args.activeInput.id == targetInp.id and extentInp.isVisible:
         # We are selecting the target selection
         already_selected = extentInp
-    else:
-        return
+    # else:
+    #     return
     
     if not already_selected:
+        try:
+            str_idx = args.selection.entity.body.parentComponent.name.find(g_dataFile.name) 
+
+            # Don't allow selecting newly inserted spacers
+            if str_idx >= 0:
+                args.isSelectable = False
+        except:
+            pass
         return
     
     target = already_selected.selection(0).entity
@@ -294,6 +304,8 @@ def command_input_changed(args: adsk.core.InputChangedEventArgs):
     elif changed_input.id == 'extent_selection' :
         if target_selInput.selectionCount == 0 :
             target_selInput.hasFocus = True
+        elif extentInp.selectionCount == 0 :
+            extentInp.hasFocus = True
         else:
             copiesInp.hasFocus = True
             

@@ -101,11 +101,12 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
 
     global g_active_occ
     design: adsk.fusion.Design = adsk.fusion.Design.cast(app.activeProduct)
-    active_comp = design.activeComponent
-    occList = design.rootComponent.allOccurrencesByComponent( active_comp )
-    if occList.count == 0:
-        return
-    g_active_occ = occList.item(0)
+    # active_comp = design.activeComponent
+    # occList = design.rootComponent.allOccurrencesByComponent( active_comp )
+    # if occList.count == 0:
+    #     return
+    # g_active_occ = occList.item(0)
+    g_active_occ = design.activeOccurrence
 
     design.activateRootComponent()
 
@@ -160,22 +161,23 @@ def command_preview(args: adsk.core.CommandEventArgs):
             # into the root component.  So we have to move it if a sub component
             # is the active component.
             part_occ = root_occs.addByInsert( g_dataFile, transform, True )
-            if active_comp.id != design.rootComponent.id:
+            # if active_comp.id != design.rootComponent.id:
+            if g_active_occ:
                 # futil.log(f'Active comp: name = {active_comp.name}, comp_id = {active_comp.id}')
                 # active_occ = None
                 # for occ in  root_occs.asArray():
                 #     futil.log(f'Root occurance name = {occ.name}, comp_name={occ.component.name}, comp_id = {occ.component.id}')
-                occList = design.rootComponent.allOccurrencesByComponent( active_comp )
-                if occList.count == 0:
-                    return
-                active_occ = occList.item(0)
+                # occList = design.rootComponent.allOccurrencesByComponent( active_comp )
+                # if occList.count == 0:
+                #     return
+                # active_occ = occList.item(0)
                 # temp_occ = None
                 # if occs.count == 0:
                 #     temp_occ = occs.addNewComponent(transform)
                 #     # copied_occ = occs.addExistingComponent( part_occ.component, transform )
                 #     # part_occ.deleteMe()
                 #     # part_occ = copied_occ
-                part_occ = part_occ.moveToComponent( active_occ )
+                part_occ = part_occ.moveToComponent( g_active_occ )
                 # if temp_occ:
                 #     pass
                     # temp_occ.deleteMe()
