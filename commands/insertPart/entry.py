@@ -72,8 +72,11 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
 
     # Create a simple text box input.
     partFile = inputs.addTextBoxCommandInput('insert_part', '', '', 2, True)
+    global g_dataFile
     global g_iconName
-    inputs.addImageCommandInput( 'thumbnail', '', g_iconName)
+    partFile.text = g_dataFile.name
+    partFile.tooltip = partFile.text
+    partFile.toolClipFilename = g_iconName
 
     inputs.addSeparatorCommandInput('part_sep')
 
@@ -104,16 +107,8 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     futil.add_handler(args.command.validateInputs, command_validate_input, local_handlers=local_handlers)
     futil.add_handler(args.command.destroy, command_destroy, local_handlers=local_handlers)
 
-    global g_dataFile
-    partFile.text = g_dataFile.name
-
     global g_active_occ
     design: adsk.fusion.Design = adsk.fusion.Design.cast(app.activeProduct)
-    # active_comp = design.activeComponent
-    # occList = design.rootComponent.allOccurrencesByComponent( active_comp )
-    # if occList.count == 0:
-    #     return
-    # g_active_occ = occList.item(0)
     g_active_occ = design.activeOccurrence
 
     design.activateRootComponent()
