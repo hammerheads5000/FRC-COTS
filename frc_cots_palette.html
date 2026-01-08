@@ -411,7 +411,7 @@
 
     <div id="headerRow">
       <div id="statusLine">
-        Starting up...
+        Idle.
       </div>
     </div>
   </div>
@@ -769,11 +769,11 @@
       handle: function (action, data) {
         try {
           console.log( 'window.fusionJavaScriptHandler() -- Received action', action);
+          const json_data = JSON.parse(data || "[]");
           if (action === "partsList") {
             console.log( 'Loading parts list...')
-            const parts = JSON.parse(data || "[]");
-            if (Array.isArray(parts)) {
-              allParts = parts.map((p) => ({
+            if (Array.isArray(json_data)) {
+              allParts = json_data.map((p) => ({
                 index: p.index,
                 path: p.path,
                 label: p.label,
@@ -787,10 +787,9 @@
             buildFolderTree();
             applyFilter();
           } else if (action === "set_busy") {
-            isBusy = data != '0'
-            setLoadingOverlay( isBusy );
+            setLoadingOverlay( json_data );
           } else if (action === "status") {
-            document.getElementById("statusLine").textContent = data;
+            document.getElementById("statusLine").textContent = json_data.msg;
           } else {
             return "Unexpected action: " + action;
           }
@@ -834,7 +833,6 @@
         if (typeof adsk !== "undefined" && adsk.fusionSendData) {
           setLoadingOverlay( false )
           adsk.fusionSendData("ready", "");
-          adsk.fusionSendData("requestParts", "");
         } else {
           console.log( 'Retrying parts request ', requestPartsTries );
           requestPartsTries = requestPartsTries + 1
@@ -859,7 +857,12 @@
       }
     }
 
-    function setLoadingOverlay( isBusy ) {
+    function setLoadingOverlay( json_data ) {
+      isBusy = json_data.isBusy
+      if( json_data.msg ) {
+        msg = json_data.msg
+        document.getElementById("overlay-content").textContent = msg;
+      }
       if( isBusy ) {
         console.log( "Turning overlay ON");
         document.getElementById("overlay").style.display = "block";
