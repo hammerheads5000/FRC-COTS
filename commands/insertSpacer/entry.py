@@ -142,6 +142,7 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     design.activateRootComponent()
 
 # Only allow selection of an extent entity with a parallel plane to the target entity
+# Don't allow selection of a currently inserted spacer
 def command_preselect(args: adsk.core.SelectionEventArgs):
     global g_dataFile
 
@@ -205,14 +206,17 @@ def command_preview(args: adsk.core.CommandEventArgs):
     force_flip = flipInp.value
 
     # Determine how long the spacer should be
-    spacer_length = 2.0 * 2.54
+    spacer_length_expr = '2.0in'
     extrude_flip = False
     if extentType.selectedItem.name == 'Distance':
-        spacer_length = distanceInp.value + startOffset.value
+        spacer_len = distanceInp.value + startOffset.value
+        spacer_length_expr = distanceInp.expression + ' + ' + startOffset.expression
     else:
         extent = extentInp.selection(0).entity
-        selection_distance = app.measureManager.measureMinimumDistance(target_entity, extent)
-        spacer_length = selection_distance.value + startOffset.value + endOffset.value
+        toObj_distance = app.measureManager.measureMinimumDistance(target_entity, extent)
+        toObj_expression = f'{toObj_distance.value}cm'
+        spacer_len = toObj_distance.value + startOffset.value + endOffset.value
+        spacer_length_expr = toObj_expression + '+' + startOffset.expression + '+' + endOffset.expression
 
         extrude_flip = determine_extrude_flip(target_entity, extent)
 
@@ -247,21 +251,23 @@ def command_preview(args: adsk.core.CommandEventArgs):
     body1 = tempBR.copy(top_face)
     body2 = tempBR.copy(offset_face)
     model_length = app.measureManager.measureMinimumDistance(body1, body2)
+    model_len_expression = f'{model_length.value} cm'
 
     joint_part(active_comp, target, new_occ, force_flip ^ extrude_flip)
 
-    bottom_dist = spacer_length - model_length.value - startOffset.value
+    bottom_dist = spacer_len - model_length.value - startOffset.value
+    bottom_dist_expr = spacer_length_expr + ' - ' + model_len_expression + ' - ' + startOffset.expression
     if abs(bottom_dist) > 0.0001:
-        bottom_distInp = adsk.core.ValueInput.createByReal(bottom_dist)
+        bottom_distInp = adsk.core.ValueInput.createByString(bottom_dist_expr)
         offset_input = active_comp.features.offsetFacesFeatures.createInput( [offset_face], bottom_distInp)
         active_comp.features.offsetFacesFeatures.add(offset_input)
 
     if abs(startOffset.value) > 0.0001:
-        top_dist = adsk.core.ValueInput.createByReal(startOffset.value)
+        top_dist = adsk.core.ValueInput.createByString(startOffset.expression)
         offset_input = active_comp.features.offsetFacesFeatures.createInput( [top_face], top_dist)
         active_comp.features.offsetFacesFeatures.add(offset_input)
 
-    new_occ.component.name = g_dataFile.name + f' x {spacer_length/2.54:.3f}in'
+    new_occ.component.name = g_dataFile.name + f' x {spacer_len/2.54:.3f}in'
 
     if copies.selectionCount > 0:
         for sidx in range(copies.selectionCount):
