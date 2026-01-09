@@ -30,8 +30,12 @@ ICON_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'resource
 # they are not released and garbage collected.
 local_handlers = []
 
-# The datafile to be inserted.  Set in FRC_COTS.py - FRCHTMLHandler()
+# The datafile and icon file name to be inserted.  Set in FRC_COTS.py - FRCHTMLHandler()
 g_dataFile = adsk.core.DataFile.cast(None)
+g_iconName = ''
+
+# The active component
+g_active_occ = adsk.fusion.Occurrence.cast(None)
 
 # Executed when add-in is run.
 def start():
@@ -43,31 +47,11 @@ def start():
     # Define an event handler for the command created event. It will be called when the button is clicked.
     futil.add_handler(cmd_def.commandCreated, command_created)
 
-    # ******** Add a button into the UI so the user can run the command. ********
-    # Get the target workspace the button will be created in.
-    # workspace = ui.workspaces.itemById(WORKSPACE_ID)
-
-    # # Get the panel the button will be created in.
-    # panel = workspace.toolbarPanels.itemById(PANEL_ID)
-
-    # # Create the button command control in the UI after the specified existing command.
-    # control = panel.controls.addCommand(cmd_def, COMMAND_BESIDE_ID, False)
-
-    # # Specify if the command is promoted to the main toolbar. 
-    # control.isPromoted = IS_PROMOTED
-
 
 # Executed when add-in is stopped.
 def stop():
-    # Get the various UI elements for this command
-    # workspace = ui.workspaces.itemById(WORKSPACE_ID)
-    # panel = workspace.toolbarPanels.itemById(PANEL_ID)
-    # command_control = panel.controls.itemById(config.INSERT_PART_CMD_ID)
+    # Get the cmddef for this command
     command_definition = ui.commandDefinitions.itemById(config.INSERT_PART_CMD_ID)
-
-    # # Delete the button command control
-    # if command_control:
-    #     command_control.deleteMe()
 
     # Delete the command definition
     if command_definition:
@@ -87,14 +71,32 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     # TODO Define the dialog for your command by adding different inputs to the command.
 
     # Create a simple text box input.
-    partFile = inputs.addTextBoxCommandInput('insert_part', 'Part:', '', 2, True)
+    partFile = inputs.addTextBoxCommandInput('insert_part', '', '', 2, True)
+    global g_dataFile
+    global g_iconName
+    partFile.text = g_dataFile.name
+    partFile.tooltip = partFile.text
+    partFile.toolClipFilename = g_iconName
+
+    inputs.addSeparatorCommandInput('part_sep')
 
     # Create a selection input for the joint locations.
     sel = inputs.addSelectionInput('target_entity', 'Joints:', 'Select face or circle')
     sel.addSelectionFilter('PlanarFaces')
     sel.addSelectionFilter('CircularEdges')
+    sel.addSelectionFilter('JointOrigins')
+    sel.addSelectionFilter('SketchPoints')
+    sel.addSelectionFilter('ConstructionPoints')
     sel.addSelectionFilter('Vertices')
     sel.setSelectionLimits(1, 0)
+
+    # zero = adsk.core.ValueInput.createByReal(0)
+    # angleInp = inputs.addAngleValueCommandInput( 'joint_angle', 'Angle', zero)
+    # angleInp.isVisible = False
+    # angleInp.isEnabled = False
+
+    linkInp = inputs.addBoolValueInput( 'link_part', 'Link Part', True)
+    linkInp.value = config.DEFAULT_TO_LINKED_PARTS
 
     inputs.addBoolValueInput( 'force_flip', 'Flip', True, os.path.join(ICON_FOLDER, 'Flip'))
 
@@ -105,8 +107,11 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     futil.add_handler(args.command.validateInputs, command_validate_input, local_handlers=local_handlers)
     futil.add_handler(args.command.destroy, command_destroy, local_handlers=local_handlers)
 
-    global g_dataFile
-    partFile.text = g_dataFile.name
+    global g_active_occ
+    design: adsk.fusion.Design = adsk.fusion.Design.cast(app.activeProduct)
+    g_active_occ = design.activeOccurrence
+
+    design.activateRootComponent()
 
 # This event handler is called when the user clicks the OK button in the command dialog or 
 # is immediately called after the created event not command inputs were created for the dialog.
@@ -121,37 +126,51 @@ def command_execute(args: adsk.core.CommandEventArgs):
     target_entity: adsk.core.SelectionCommandInput = inputs.itemById('target_entity')
 
 
-
-
 # This event handler is called when the command needs to compute a new preview in the graphics window.
 def command_preview(args: adsk.core.CommandEventArgs):
     global g_dataFile
+    global g_active_occ
 
      # General logging for debug.
     futil.log(f'{CMD_NAME} Command Preview Event')
     inputs = args.command.commandInputs
 
-    target_selInput: adsk.core.SelectionCommandInput = inputs.itemById('target_entity')
-    target_entity = target_selInput.selection(0).entity
+    linkInp: adsk.core.BoolValueCommandInput = inputs.itemById('link_part')
+    link_part = linkInp.value
 
+    target_selInput: adsk.core.SelectionCommandInput = inputs.itemById('target_entity')
+    # angleInp: adsk.core.AngleValueCommandInput = inputs.itemById('joint_angle')
     flipInp: adsk.core.BoolValueCommandInput = inputs.itemById('force_flip')
     force_flip = flipInp.value
 
+    # futil.log(f'Angle = {angleInp.expression}')
+
     design: adsk.fusion.Design = adsk.fusion.Design.cast(app.activeProduct)
 
-    root_comp = design.rootComponent
-    occs = root_comp.occurrences
+    if g_active_occ:
+        active_comp = g_active_occ.component
+    else:
+        active_comp = design.rootComponent
+    
+    root_occs = design.rootComponent.occurrences
 
     transform = adsk.core.Matrix3D.create()
-    new_occ = adsk.fusion.Occurrence.cast(None)
+    part_occ = adsk.fusion.Occurrence.cast(None)
     for i in range( target_selInput.selectionCount):
         target = target_selInput.selection(i).entity
-        if new_occ:
-            next_occ = occs.addExistingComponent( new_occ.component, transform )
-            joint_part(root_comp, target, next_occ, force_flip)
+        if link_part:
+            # A bug makes so you can only insert a linked component from another project
+            # into the root component.  So we have to move it if a sub component
+            # is the active component.
+            part_occ = root_occs.addByInsert( g_dataFile, transform, True )
+            if g_active_occ:
+                part_occ = part_occ.moveToComponent( g_active_occ )
+
         else:
-            new_occ = occs.addByInsert( g_dataFile, transform, True )
-            joint_part(root_comp, target, new_occ, force_flip)
+            # Do not link component
+            part_occ = active_comp.occurrences.addByInsert( g_dataFile, transform, False )
+
+        joint_part(active_comp, target, part_occ, force_flip)
 
     args.isValidResult = True
 
@@ -165,6 +184,22 @@ def command_input_changed(args: adsk.core.InputChangedEventArgs):
     # General logging for debug.
     # futil.log(f'{CMD_NAME} Input Changed Event fired from a change to {changed_input.id}')
 
+    target_selInput: adsk.core.SelectionCommandInput = inputs.itemById('target_entity')
+    # angleInp: adsk.core.AngleValueCommandInput = inputs.itemById('joint_angle')
+
+    # if changed_input.id == 'target_entity' :
+    #     if target_selInput.selectionCount == 0:
+    #         angleInp.isVisible = False
+    #         angleInp.isEnabled = False
+    #     elif target_selInput.selectionCount == 1:
+    #         angleInp.isVisible = True
+    #         angleInp.isEnabled = True
+    #         normal, centroid = find_normal_centroid( target_selInput.selection(0).entity )
+    #         plane = adsk.core.Plane.create( centroid, normal )
+    #         angleInp.setManipulator( centroid, plane.uDirection, plane.vDirection )
+    #     else:
+    #         angleInp.isVisible = True
+    #         angleInp.isEnabled = False
 
 # This event handler is called when the user interacts with any of the inputs in the dialog
 # which allows you to verify that all of the inputs are valid and enables the OK button.
@@ -187,25 +222,30 @@ def command_destroy(args: adsk.core.CommandEventArgs):
     # General logging for debug.
     futil.log(f'{CMD_NAME} Command Destroy Event')
 
+    global g_active_occ
+    if g_active_occ:
+        g_active_occ.activate()
+    g_active_occ = None
+
     global local_handlers
     local_handlers = []
 
 
 def joint_part(
-        root_comp: adsk.fusion.Component, 
+        comp: adsk.fusion.Component, 
         target: adsk.core.Base, 
-        occ: adsk.fusion.Occurrence,
+        part_occ: adsk.fusion.Occurrence,
         force_flip: bool = False
 ):
-    joints = root_comp.joints
+    joints = comp.joints
 
     try:
-        occ.isGroundToParent = False
+        part_occ.isGroundToParent = False
     except:
         pass
 
-    isPartFlipped, joint_geo_cots = get_part_joint(occ)
-    isTargetFlipped, joint_geo_target = create_joint_from_entity(target)
+    isPartFlipped, joint_geo_cots = get_part_joint(part_occ)
+    isTargetFlipped, joint_geo_target = create_joint_from_entity(target, comp)
 
     if joint_geo_target:
         joint_input = joints.createInput(
@@ -224,13 +264,13 @@ def joint_part(
 
         joints.add(joint_input)
 
-def get_part_joint(occ: adsk.fusion.Occurrence) -> adsk.fusion.JointGeometry:
-    comp = occ.component
+def get_part_joint(part_occ: adsk.fusion.Occurrence) -> adsk.fusion.JointGeometry:
+    comp = part_occ.component
 
     # If the part has a joint origin then use it
     if comp.jointOrigins.count > 0 :
         joint_origin = comp.jointOrigins.item(0)
-        new_joint_occ = joint_origin.createForAssemblyContext(occ)
+        new_joint_occ = joint_origin.createForAssemblyContext(part_occ)
         return False, new_joint_occ
     
     # No joint origin so we use the coordinate origin
@@ -241,7 +281,7 @@ def get_part_joint(occ: adsk.fusion.Occurrence) -> adsk.fusion.JointGeometry:
         )
         return None
 
-    origin_proxy = origin_native.createForAssemblyContext(occ)
+    origin_proxy = origin_native.createForAssemblyContext(part_occ)
     if not origin_proxy:
         ui.messageBox(
             "Failed to create origin proxy for '{}'.".format(comp.name)
@@ -301,6 +341,13 @@ def create_joint_from_entity(entity: adsk.core.Base, occ: adsk.fusion.Occurrence
                 None
             )
 
+    elif isinstance(entity, adsk.fusion.BRepVertex):
+        joint_geo_target = adsk.fusion.JointGeometry.createByPoint(entity)
+    elif isinstance(entity, adsk.fusion.ConstructionPoint):
+        joint_geo_target = adsk.fusion.JointGeometry.createByPoint(entity)
+    elif isinstance(entity, adsk.fusion.SketchPoint):
+        joint_geo_target = adsk.fusion.JointGeometry.createByPoint(entity)
+
     elif isinstance(entity, adsk.fusion.JointOrigin):
         joint_geo_target = entity
     else:
@@ -311,3 +358,27 @@ def create_joint_from_entity(entity: adsk.core.Base, occ: adsk.fusion.Occurrence
         )
 
     return isFlipped, joint_geo_target
+
+def find_normal_centroid( entity: adsk.core.Base) -> tuple[adsk.core.Vector3D, adsk.core.Point3D]:
+
+    if isinstance(entity, adsk.fusion.BRepEdge):
+        edge: adsk.fusion.BRepEdge = entity
+        for face in edge.faces:
+            if isinstance(face.geometry, adsk.core.Plane):
+                _, normal = face.evaluator.getNormalAtPoint(face.centroid)
+                return normal, face.centroid
+
+    elif isinstance(entity, adsk.fusion.BRepFace):
+        brFace: adsk.fusion.BRepFace = entity
+        if isinstance(brFace.geometry, adsk.core.Plane):
+            _, normal = brFace.evaluator.getNormalAtPoint(brFace.centroid)
+            return normal, brFace.centroid
+
+    elif isinstance(entity, adsk.fusion.JointOrigin):
+        jo: adsk.fusion.JointOrigin = entity
+        return jo.primaryAxisVector, jo.transform.translation.asPoint()
+
+    else:
+        futil.log(f'  ------- find_normal -----  Unhandled entity type "{entity.objectType}"')
+
+    return adsk.core.Vector3D.create(0,0,1), adsk.core.Point3D.create()

@@ -115,6 +115,28 @@ Favorites and theme settings persist across sessions.
 
 ---
 
+## Joint Origins
+
+1. If a part has a joint origin defined in it (the first one found) then it is inserted using the joint origin.  It points the joint origin positive z-axis toward the mating part.
+2. If no joint origin exists then it is inserted with the coordinate origin as the center and the positive z-axis toward the mating part.
+
+---
+
+## Dynamic Spacers
+
+1. Spacer and Shaft parts can be defined as 'dynamic spacers' so their length can be customized during insertion.
+2. Some parts that are already setup as dynamic spacers can be found in the `spacers` directory of the Add-In files.
+3. To create a dynamic spacer you do the following:
+    - Make a part that is a short section of the spacer or shaft.  For shaft I used 2" lengths and for spacers I used 1/4" lengths.  It doesn't matter what length.  I chose those so the thumbnails looked good.
+    - Each end of the part should be a planar face that is capable of being "Press/Pulled".
+    - Create a joint origin at one end of the part with the z-direction of the joint origin facing outward.
+    - Run the `Make Spacer` command found under the `Utilities` Panel.  Check the box to make this part a dynamic spacer.  This sets an attribute on the part file that is hidden but allows it to be dectected as a dynamic spacer. Unchecking the box removes the attribute.
+    - Hide the joint origin and the coordinate origin if it is showing and save the design.
+    - It should now be usable as a dynamic spacer.  
+    - Just insert it from the FRC_COTS palette and it should bring up a different dialog to manipulate it.
+
+---
+
 ## Tested With
 
 - Autodesk Fusion 360 (latest public release)

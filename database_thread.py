@@ -47,9 +47,9 @@ def delete_all_icons():
 
 def send_event_to_main_thread(action, data):
     # action is one of:
-    #   'set_busy' -> set the palette busy state, data is '0' or '1'
+    #   'set_busy' -> set the palette busy state, data is e.g. {'isBusy': True, 'msg': 'Banner message'}
     #   'update' -> tell the palette to update, data is ''
-    #   'status' -> set the status line, data is message (e.g. 'Idle.') 
+    #   'status' -> set the status line, data is {'msg': 'Idle'}
     args = {'action': action, 'data': data}
     app.fireCustomEvent( myCustomEvent, json.dumps(args) )
 
@@ -658,9 +658,6 @@ class DatabaseThread(threading.Thread):
         threading.Thread.__init__(self)
         self.stopped = threading.Event()
 
-    def isRunning(self):
-        return not self.stopped.is_set()
-
     def stop(self):
         self.stopped.set()
 
@@ -675,6 +672,12 @@ class DatabaseThread(threading.Thread):
             # Find the COTS database
             project = find_project(config.PARTS_DB_PROJECT)
             if not project:
+                send_event_to_main_thread('set_busy', 
+                    { 
+                        'isBusy': True, 
+                        'msg': f'Unable to Open project {config.PARTS_DB_PROJECT}!!'
+                    }
+                )
                 return
             
             # Create the parts file IO database
@@ -693,7 +696,12 @@ class DatabaseThread(threading.Thread):
             # Create the update queue and add the root folder job to it.
             g_update_queue = FolderUpdateQueue(job)
 
-            send_event_to_main_thread('set_busy', '1' )
+            send_event_to_main_thread('set_busy', 
+                {
+                    'isBusy': True,
+                    'msg': f'LOADING DATABASE...'
+                }
+            )
 
             g_parts_db.save_json_file()
 
@@ -705,7 +713,8 @@ class DatabaseThread(threading.Thread):
                 busy_text = 'Building index...'
 
             busy_update_time = time.time()
-            send_event_to_main_thread('status', busy_text + busy_rounds[busy_idx % 4] )
+            msg = busy_text + busy_rounds[busy_idx % 4]
+            send_event_to_main_thread('status', {'msg': msg})
             busy_idx += 1
 
             # Fire an event that tells the Palette to refresh.
@@ -715,7 +724,7 @@ class DatabaseThread(threading.Thread):
             first_job = True
 
             # Start the main processing loop for the database thread...
-            while self.isRunning():
+            while not self.stopped.is_set():
                 # Check if there are thumbnail images to process
                 # Process them then 'update' the palette if priority
                 # thumbnail files were created.
@@ -729,7 +738,7 @@ class DatabaseThread(threading.Thread):
                     # Update the busy text to spin around.
                     if time.time() - busy_update_time > 0.5:
                         msg = busy_text + busy_rounds[busy_idx % 4]
-                        send_event_to_main_thread('status', msg)
+                        send_event_to_main_thread('status', {'msg': msg})
                         busy_idx += 1
                         busy_update_time = time.time()
 
@@ -738,7 +747,7 @@ class DatabaseThread(threading.Thread):
                         current_job = g_update_queue.pop()
                         if first_job:
                             # Remove the busy overlay and update the parts
-                            send_event_to_main_thread('set_busy', '0' )
+                            send_event_to_main_thread('set_busy', {'isBusy': False})
                             send_event_to_main_thread('update', '' )
                             first_job = False
 
@@ -748,7 +757,7 @@ class DatabaseThread(threading.Thread):
                             # Save the JSON file to disk
                             g_parts_db.build_complete()
                             g_parts_db.save_json_file()
-                            send_event_to_main_thread('status', 'Idle.' )
+                            send_event_to_main_thread('status', {'msg': 'Idle.'} )
                             send_event_to_main_thread('update', '' )
 
                 if not current_job:
@@ -761,7 +770,7 @@ class DatabaseThread(threading.Thread):
                         current_job = g_update_queue.pop()
                         if current_job:
                             msg = busy_text + busy_rounds[busy_idx % 4]
-                            send_event_to_main_thread('status', msg)
+                            send_event_to_main_thread('status', {'msg': msg})
                             busy_idx += 1
                             busy_update_time = time.time()
 

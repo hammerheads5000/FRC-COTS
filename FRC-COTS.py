@@ -86,107 +86,7 @@ def save_favorites():
             json.dump(g_favorites, f, indent=2)
     except Exception:
         pass
-
-def insert_part_at_targets(design: adsk.fusion.Design, path, label, data_file_id, targets, ui):
-    """
-    Insert the given DataFile into the root component and create joints
-    from its origin to each of the target entities.
-    """
-    root_comp = design.rootComponent
-    occs = root_comp.occurrences
-    joints = root_comp.joints
-
-    data_file = database_thread.get_data_file( path, data_file_id )
-    if not data_file:
-        return
-
-    for target_entity in targets:
-        # Insert as reference occurrence at identity transform
-        transform = adsk.core.Matrix3D.create()
-        new_occ = occs.addByInsert(
-            data_file,
-            transform,
-            True  # reference to original design
-        )
-
-        # Ensure the inserted occurrence is not grounded so joints can move it
-        try:
-            new_occ.isGroundToParent = False
-        except:
-            # If this property is not available for any reason, ignore and continue
-            pass
-
-        comp = new_occ.component
-        origin_native = comp.originConstructionPoint
-        if not origin_native:
-            ui.messageBox(
-                "Inserted component '{}' has no originConstructionPoint.".format(label)
-            )
-            continue
-
-        origin_proxy = origin_native.createForAssemblyContext(new_occ)
-        if not origin_proxy:
-            ui.messageBox(
-                "Failed to create origin proxy for '{}'.".format(label)
-            )
-            continue
-
-        joint_geo_cots = adsk.fusion.JointGeometry.createByPoint(origin_proxy)
-
-        # Build target joint geometry based on the selected entity type
-        joint_geo_target = None
-
-        if isinstance(target_entity, adsk.fusion.BRepEdge):
-            joint_geo_target = adsk.fusion.JointGeometry.createByCurve(
-                target_entity,
-                adsk.fusion.JointKeyPointTypes.CenterKeyPoint
-            )
-
-        elif isinstance(target_entity, adsk.fusion.BRepFace):
-            face = target_entity
-            surf = face.geometry
-
-            if isinstance(surf, adsk.core.Plane):
-                joint_geo_target = adsk.fusion.JointGeometry.createByPlanarFace(
-                    face,
-                    None,
-                    adsk.fusion.JointKeyPointTypes.CenterKeyPoint
-                )
-            else:
-                joint_geo_target = adsk.fusion.JointGeometry.createByNonPlanarFace(
-                    face,
-                    None
-                )
-
-        elif isinstance(target_entity, adsk.fusion.JointOrigin):
-            joint_geo_target = adsk.fusion.JointGeometry.createByJointOrigin(
-                target_entity
-            )
-
-        else:
-            ui.messageBox(
-                "Unsupported selection type for joint target: {}".format(
-                    type(target_entity)
-                )
-            )
-            continue
-
-        if joint_geo_target is not None:
-            joint_input = joints.createInput(
-                joint_geo_cots,
-                joint_geo_target
-            )
-            joint_input.setAsRigidJointMotion()
-
-            # Flip the default joint orientation (for example, 180 degrees about its primary axis)
-            # try:
-            #     joint_input.isFlipped = True
-            # except:
-            #     # If this property is not available, just ignore and proceed
-            #     pass
-
-            joints.add(joint_input)
-
+    
 
 def _palette_html_path():
     """Path to the HTML palette file."""
@@ -274,7 +174,13 @@ class MyStartupCompletedHandler(adsk.core.ApplicationEventHandler):
     def notify(self, args: adsk.core.ApplicationEventArgs):
         global g_dbThread
 
-        futil.log('In MyStartupCompletedHandler event handler.')
+        # Load favorites 
+        load_favorites()
+
+        # Create the palette
+        create_palette()
+
+        futil.log('MyStartupCompletedHandler::notify() -- Starting the DB thread...')
         # Start the database thread
         if not g_dbThread:
             g_dbThread = database_thread.DatabaseThread()
@@ -287,7 +193,7 @@ class DatabaseThreadEventHandler(adsk.core.CustomEventHandler):
 
         eventArgs = json.loads(args.additionalInfo)
         action = eventArgs['action']
-        data = eventArgs['data']
+        data = json.dumps(eventArgs['data'])
         futil.log( f'DatabaseThreadEventHandler() -- Event "{action} data = {data}"')
 
         if action == "set_busy":
@@ -348,7 +254,7 @@ class FRCHTMLHandler(adsk.core.HTMLEventHandler):
                     ui.messageBox('Invalid part index from HTML.')
                     return
 
-                path, label, data_file_id, _ = cots_files[idx]
+                path, label, data_file_id, icon_name = cots_files[idx]
 
                 dataFile = database_thread.get_data_file( path, data_file_id )
                 isSpacer = setJoint.is_dataFile_spacer(dataFile)
@@ -357,9 +263,11 @@ class FRCHTMLHandler(adsk.core.HTMLEventHandler):
                     # This is a spacer
                     insertCmd = ui.commandDefinitions.itemById(config.INSERT_SPACER_CMD_ID)
                     insertSpacer.g_dataFile = dataFile
+                    insertSpacer.g_iconName = icon_name
                 else:
                     insertCmd = ui.commandDefinitions.itemById(config.INSERT_PART_CMD_ID)
                     insertPart.g_dataFile = dataFile
+                    insertPart.g_iconName = icon_name
 
                 if insertCmd:
                     insertCmd.execute()
@@ -408,6 +316,17 @@ class ShowPaletteCreatedHandler(adsk.core.CommandCreatedEventHandler):
         global g_dbThread
 
         futil.log(f'ShowPaletteCreatedHandler::notify()...')
+
+        if not g_dbThread or not g_dbThread.is_alive():
+            futil.log('        ------- Restarting the DB thread...')
+            g_dbThread = database_thread.DatabaseThread()
+            g_dbThread.start()
+        # else:
+        #     if not g_dbThread.is_alive():
+        #         futil.log('ShowPaletteCreatedHandler::notify() -- Restarting the DB thread...')
+        #         g_dbThread.start()
+
+
         palette_just_created = False
         palette = get_palette()
         if not palette:
@@ -436,7 +355,6 @@ class ShowPaletteCreatedHandler(adsk.core.CommandCreatedEventHandler):
             send_parts_to_palette(palette)
 
 def run(context):
-    global g_dbThread
     try:
 
         if not _ensure_file_paths_exist():
@@ -475,9 +393,6 @@ def run(context):
             control = insert_panel.controls.itemById(cmd_id)
             if not control:
                 control = insert_panel.controls.addCommand(cmd_def, '')
-
-        # Load favorites 
-        load_favorites()
 
         # Check if startup is already complete.  This is True when
         # the add-in is run manually from the add-ins table.
