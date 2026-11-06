@@ -13,6 +13,12 @@ from .commands.makeSpacer import entry as setJoint
 
 from .lib import fusionAddInUtils as futil
 
+CMD_ID = 'FRC_InsertCOTS'
+CMD_PALETTE_ID = 'FRC_COTS_Palette'
+SOLID_WORKSPACE_ID = 'FusionSolidEnvironment'
+PANEL_ID = 'InsertPanel'
+ASSM_PANEL_ID = 'InsertAssemblePanel'
+COMMAND_BESIDE_ID = ''
 
 # Keep a global reference to event handlers so they are not garbage collected.
 handlers = []
@@ -22,8 +28,8 @@ handlers = []
 customEvent = None
 
 # Global state
-g_favorites = {}            # dataFile.id -> bool
-g_palette = None            # HTML palette reference
+g_favorites = {}                            # dataFile.id -> bool
+g_palette = adsk.core.Palette.cast(None)    # HTML palette reference
 g_dbThread = None
 
 app = adsk.core.Application.get()
@@ -35,15 +41,15 @@ ICON_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'resource
 
 def _ensure_file_paths_exist():
     if not os.path.exists(config.PARTS_DB_FOLDER):
-        futil.popup_error(f'PARTS_DB_FOLDER = "{config.PARTS_DB_FOLDER}" does not exist!  '
-                          + 'See config.py file')
+        futil.handle_error(f'PARTS_DB_FOLDER = "{config.PARTS_DB_FOLDER}" does not exist!  '
+                          + 'See config.py file', True)
         return False
     
     if not os.path.exists(config.PARTS_DB_PATH):
         try:
             os.mkdir(config.PARTS_DB_PATH)
         except:
-            futil.popup_error(f'Cannot create PARTS_DB_PATH = "{config.PARTS_DB_PATH}".')
+            futil.handle_error(f'Cannot create PARTS_DB_PATH = "{config.PARTS_DB_PATH}".', True)
             return False
 
     icon_path = os.path.join(config.PARTS_DB_PATH, 'icons')
@@ -51,7 +57,7 @@ def _ensure_file_paths_exist():
         try:
             os.mkdir(icon_path)
         except:
-            futil.popup_error(f'Cannot create icons directory at "{icon_path}".')
+            futil.handle_error(f'Cannot create icons directory at "{icon_path}".', True)
             return False
 
     return True
@@ -72,20 +78,27 @@ def load_favorites():
         if os.path.exists(path):
             with open(path, 'r') as f:
                 g_favorites = json.load(f)
+            futil.log( f'   favorites loaded from "{path}".')
         else:
             g_favorites = {}
+            futil.log( f'   no favorites found.  Tried: "{path}".')
     except Exception:
         g_favorites = {}
+        futil.log( f'   exception occured loading favorites.  Tried: "{path}".')
 
 
 def save_favorites():
     """Persist favorites mapping to disk."""
     try:
+        futil.log( f'Saving favorites...')
         path = _favorites_path()
         with open(path, 'w') as f:
             json.dump(g_favorites, f, indent=2)
+            futil.log( f'   favorites saved to "{path}".')
+
     except Exception:
-        pass
+        futil.log( f'   exception occured saving favorites.  Tried: "{path}".')
+    
     
 
 def _palette_html_path():
@@ -135,8 +148,7 @@ def create_palette() -> adsk.core.Palette:
     if g_palette and g_palette.isValid:
         return g_palette
 
-    pal_id = 'FRC_COTS_Palette'
-    pal: adsk.core.Palette = ui.palettes.itemById(pal_id)
+    pal: adsk.core.Palette = ui.palettes.itemById(CMD_PALETTE_ID)
     if pal and not pal.isValid:
         # Stale palette, remove so we can recreate
         pal.deleteMe()
@@ -146,7 +158,7 @@ def create_palette() -> adsk.core.Palette:
         html_path = _palette_html_path()
         url = 'file:///' + html_path.replace('\\', '/')
         pal = ui.palettes.add(
-            pal_id,
+            CMD_PALETTE_ID,
             'FRC COTS Library',
             url,
             True,   # isVisible
@@ -272,8 +284,6 @@ class FRCHTMLHandler(adsk.core.HTMLEventHandler):
                 if insertCmd:
                     insertCmd.execute()
 
-
-                # insert_part_at_targets(design, path, label, data_file_id, targets, ui)
                 return
 
             # User navigated to a new folder
@@ -291,7 +301,7 @@ class FRCHTMLHandler(adsk.core.HTMLEventHandler):
                     payload = json.loads(data) if data else {}
                     idx = int(payload.get('index', -1))
                     fav = bool(payload.get('favorite', False))
-                except Exception:
+                except Exception as e:
                     idx = -1
                     fav = False
 
@@ -360,11 +370,10 @@ def run(context):
         if not _ensure_file_paths_exist():
             raise Exception("Database directory creation failed.") 
 
-        cmd_id = 'FRC_InsertCOTS'
-        cmd_def = ui.commandDefinitions.itemById(cmd_id)
+        cmd_def = ui.commandDefinitions.itemById(CMD_ID)
         if not cmd_def:
             cmd_def = ui.commandDefinitions.addButtonDefinition(
-                cmd_id,
+                CMD_ID,
                 'FRC COTS Library',
                 'Open the FRC COTS library palette to insert components',
                 ICON_FOLDER
@@ -386,13 +395,22 @@ def run(context):
         handlers.append(on_created)
 
         # Put the button on the Insert panel in the Design workspace
-        solid_ws = ui.workspaces.itemById('FusionSolidEnvironment')
+        solid_ws = ui.workspaces.itemById(SOLID_WORKSPACE_ID)
         panels = solid_ws.toolbarPanels
-        insert_panel = panels.itemById('InsertPanel')
+        insert_panel = panels.itemById(PANEL_ID)
         if insert_panel:
-            control = insert_panel.controls.itemById(cmd_id)
+            control = insert_panel.controls.itemById(CMD_ID)
             if not control:
-                control = insert_panel.controls.addCommand(cmd_def, '')
+                control = insert_panel.controls.addCommand(cmd_def, COMMAND_BESIDE_ID)
+
+        # Put the button on the Assembly Insert panel
+        solid_ws = ui.workspaces.itemById(SOLID_WORKSPACE_ID)
+        panels = solid_ws.toolbarPanels
+        insert_panel = panels.itemById(ASSM_PANEL_ID)
+        if insert_panel:
+            control = insert_panel.controls.itemById(CMD_ID)
+            if not control:
+                control = insert_panel.controls.addCommand(cmd_def, COMMAND_BESIDE_ID)
 
         # Check if startup is already complete.  This is True when
         # the add-in is run manually from the add-ins table.
@@ -416,34 +434,41 @@ def stop(context):
     commands.stop()
 
     try:
-        cmd_id = 'FRC_InsertCOTS'
-
         # Stop the database thread
         if g_dbThread:
             g_dbThread.stop()
             g_dbThread.join()
 
-        # Remove the toolbar button
-        solid_ws = ui.workspaces.itemById('FusionSolidEnvironment')
+        # Remove the toolbar button in the Design Workspace
+        solid_ws = ui.workspaces.itemById(SOLID_WORKSPACE_ID)
         panels = solid_ws.toolbarPanels
-        insert_panel = panels.itemById('InsertPanel')
+        insert_panel = panels.itemById(PANEL_ID)
         if insert_panel:
-            control = insert_panel.controls.itemById(cmd_id)
+            control = insert_panel.controls.itemById(CMD_ID)
+            if control:
+                control.deleteMe()
+
+        # Remove the toolbar button in the Assembly Workspace
+        solid_ws = ui.workspaces.itemById(SOLID_WORKSPACE_ID)
+        panels = solid_ws.toolbarPanels
+        insert_panel = panels.itemById(ASSM_PANEL_ID)
+        if insert_panel:
+            control = insert_panel.controls.itemById(CMD_ID)
             if control:
                 control.deleteMe()
 
         # Remove the command definition
-        cmd_def = ui.commandDefinitions.itemById(cmd_id)
+        cmd_def = ui.commandDefinitions.itemById(CMD_ID)
         if cmd_def:
             cmd_def.deleteMe()
 
         # Remove the HTML palette if it exists
         global g_palette
-        if g_palette:
+        if g_palette and g_palette.isValid:
             g_palette.deleteMe()
             g_palette = None
         else:
-            pal = ui.palettes.itemById('FRC_COTS_Palette')
+            pal = ui.palettes.itemById(CMD_PALETTE_ID)
             if pal:
                 pal.deleteMe()
 
