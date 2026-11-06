@@ -2,13 +2,14 @@
 
 build_path="./build"
 program_basename="FRC-COTS"
-version=`gawk '/version/ {gsub(/\042|,/, ""); print $2 }' ./FRC-COTS.manifest`
+zip_exe="/mnt/c/Program Files/7-Zip/7z.exe"
+version=`gawk '/version/ {gsub(/\042|,|\r/, ""); print $2 }' ./FRC-COTS.manifest`
 
 echo "Extracted version is $version"
 
-"C:/Program Files/7-Zip/7z.exe" d $build_path/$program_basename.zip *
+"$zip_exe" d $build_path/$program_basename.zip *
 
-"C:/Program Files/7-Zip/7z.exe" a $build_path/$program_basename.zip LICENSE \
+"$zip_exe" a $build_path/$program_basename.zip LICENSE \
     *.md *.png *.html *.py *.manifest -ir!lib/* -ir!commands/* -ir!resources/* \
     -ir!spacers/* -xr!__pycache__
 

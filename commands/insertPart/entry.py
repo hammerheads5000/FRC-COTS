@@ -19,7 +19,8 @@ IS_PROMOTED = False
 # This is done by specifying the workspace, the tab, and the panel, and the 
 # command it will be inserted beside. Not providing the command to position it
 # will insert it at the end.
-WORKSPACE_ID = 'FusionSolidEnvironment'
+SOLID_WORKSPACE_ID = 'FusionSolidEnvironment'
+ASSM_WORKSPACE_ID = 'FusionAssemblyEnvironment'
 PANEL_ID = 'InsertPanel'
 COMMAND_BESIDE_ID = ''
 
